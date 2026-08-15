@@ -6,4 +6,5 @@
   and writes, for anything that has to consume a font it produces.
 
 The original brief this was built from is in [design/project.md](../design/project.md),
-and the top-level [README](../README.md) covers building and running the app.
+and the top-level [README](../README.md) covers the prerequisites, building,
+running and packaging the app.

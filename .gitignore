@@ -1,6 +1,35 @@
+# Dependencies
 node_modules/
+
+# Build output — out/ is electron-vite's bundles, release/ is electron-builder's
+# packaged apps and installers. dist/ is not currently produced, but is the
+# conventional third place for it to land.
 out/
 dist/
 release/
+
+# Caches and incremental state
+.vite/
+*.tsbuildinfo
+.eslintcache
+
+# Logs
 *.log
+npm-debug.log*
+
+# Local environment
+.env
+.env.local
+
+# Editor and OS cruft. fonteditor.code-workspace is deliberately tracked — it is
+# the shared workspace definition, not per-user state.
+.vscode/
+.idea/
+*.swp
 .DS_Store
+Thumbs.db
+desktop.ini
+
+# Nothing here ignores font artefacts, and nothing should: .fnt.json projects and
+# exported .bin / .widths.json / .map.json files are the point of the app, and are
+# worth committing as fixtures, samples or finished fonts.

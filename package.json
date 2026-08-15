@@ -6,10 +6,16 @@
   "author": "Simon Cooke",
   "license": "MIT",
   "main": "./out/main/index.js",
+  "engines": {
+    "node": "^18.18.0 || >=20.0.0",
+    "npm": ">=8.0.0"
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
     "start": "electron-vite preview",
+    "dist": "npm run build && electron-builder",
+    "dist:dir": "npm run build && electron-builder --dir",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
