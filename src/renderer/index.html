@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      Everything ships with the app and nothing is loaded from the network.
+      'unsafe-inline'/'unsafe-eval' and the localhost connect-src are what the
+      Vite dev server needs for module transforms and HMR.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://localhost:* http://localhost:*"
+    />
+    <title>Font Editor</title>
+  </head>
+  <body>
+    <div id="app">
+      <header id="toolbar">
+        <span id="font-info" class="info"></span>
+        <span class="spacer"></span>
+        <span id="glyph-info" class="info"></span>
+      </header>
+
+      <main>
+        <section id="editor">
+          <div id="matrix-host">
+            <canvas id="matrix"></canvas>
+          </div>
+          <div id="status" class="hint"></div>
+        </section>
+
+        <div id="splitter" title="Drag to resize the character map"></div>
+
+        <aside id="sidebar">
+          <div class="sidebar-head">Character map</div>
+          <div id="glyph-list"></div>
+        </aside>
+      </main>
+
+      <footer id="preview">
+        <label class="preview-label">
+          Preview
+          <input id="preview-text" type="text" spellcheck="false" />
+        </label>
+        <div id="preview-host">
+          <canvas id="preview-canvas"></canvas>
+        </div>
+      </footer>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
