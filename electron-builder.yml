@@ -1,0 +1,26 @@
+appId: com.spectecjr.fonteditor
+productName: Font Editor
+copyright: Copyright © Simon Cooke
+
+directories:
+  output: release
+  # Not the default `build/`, which is too easy to mistake for build output and
+  # gitignore by accident. assets/icon.png is picked up for all three platforms.
+  buildResources: assets
+
+# Everything the app needs is bundled into out/ by electron-vite, and every
+# dependency is a devDependency, so node_modules never has to ship.
+files:
+  - out/**
+  - package.json
+
+win:
+  target: nsis
+
+mac:
+  target: dmg
+  category: public.app-category.graphics-design
+
+linux:
+  target: AppImage
+  category: Graphics
