@@ -83,6 +83,25 @@ The icon is [assets/icon.png](assets/icon.png) — placeholder artwork, drawn by
 [scripts/make-icon.mjs](scripts/make-icon.mjs) so it can be tweaked without an
 image editor. Run `node scripts/make-icon.mjs` after changing it.
 
+### Releases
+
+Pushing a `vX.Y.Z` tag runs
+[.github/workflows/release.yml](.github/workflows/release.yml), which builds the
+AppImage, DMG and Windows installer on their native runners, attaches them and a
+`SHA256SUMS` file to a draft release, and publishes it only once all three have
+succeeded. The tag must match `version` in package.json; the workflow checks and
+stops if it does not. So a release is:
+
+```sh
+npm version patch     # or minor/major — commits and tags
+git push --follow-tags
+```
+
+Nothing is code-signed. Windows shows a SmartScreen warning on the installer, and
+macOS needs `xattr -dr com.apple.quarantine` on the app after download. Fixing
+either means a paid certificate — an Authenticode one for Windows, and Apple
+Developer Program membership for notarisation.
+
 **Building the Windows installer needs symlink privilege.** For the NSIS target
 electron-builder unpacks its `winCodeSign` helper, and that archive contains
 macOS symlinks; without the privilege to create them the build stops at
