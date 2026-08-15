@@ -1,0 +1,103 @@
+name: Release
+
+# Pushing a vX.Y.Z tag builds all three platforms and publishes them. The
+# release is assembled as a draft and only flipped public once every build has
+# succeeded, so a failure on one platform never leaves a half-populated release.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+env:
+  GH_REPO: ${{ github.repository }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      # The version in package.json names every artifact, so a mismatch would
+      # publish files labelled with the wrong release. Cheaper to catch here.
+      - name: Check package.json matches the tag
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "$version" != "${GITHUB_REF_NAME#v}" ]; then
+            echo "package.json is $version but the tag is ${GITHUB_REF_NAME#v}" >&2
+            exit 1
+          fi
+
+      - name: Create the draft release
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --draft \
+            --verify-tag \
+            --title "Font Editor ${GITHUB_REF_NAME#v}" \
+            --generate-notes
+
+  build:
+    needs: draft
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: --linux AppImage
+            glob: release/*.AppImage
+          - os: macos-latest
+            # macos-latest is Apple Silicon, so x64 has to be asked for by name
+            # or Intel Macs get nothing.
+            target: --mac dmg --x64 --arm64
+            glob: release/*.dmg
+          - os: windows-latest
+            target: --win nsis
+            glob: release/*.exe
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run dist -- ${{ matrix.target }}
+        env:
+          # There is no Apple certificate here. Without this, electron-builder
+          # goes looking for one and fails instead of producing an unsigned app.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Attach to the draft release
+        run: gh release upload "$GITHUB_REF_NAME" ${{ matrix.glob }} --clobber
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # Hashes are generated in one place, on one platform, so they are all
+      # produced the same way rather than by three different shells.
+      - name: Checksums
+        run: |
+          gh release download "$GITHUB_REF_NAME" --dir assets
+          cd assets
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+          gh release upload "$GITHUB_REF_NAME" SHA256SUMS --clobber
+
+      - name: Publish
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest
