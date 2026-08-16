@@ -23,13 +23,26 @@ retro and embedded targets.
 - Shift-click any glyph in the character map to pin it as a reference, drawn at
   half opacity behind the one you are editing. Shift-click it again to clear.
 - The character map reflows into as many columns as fit; drag the divider to
-  resize it.
+  resize it. For a variable-width glyph, the columns past its advance marker
+  draw in dark red rather than disappearing, so wasted cell space is visible at
+  a glance.
 - Manage which of codepoints 0–255 exist, and what Unicode character each maps to.
   The default set is CP437 with the SAM Coupe substitutions (`£` at 0x60, `©` at 0x7F).
 - Undo/redo, plus copy/paste of a whole glyph between codepoints, clear, invert,
   flip and shift.
 - Live preview of editable sample text at three zoom levels, in white-on-black or
   black-on-white.
+- **File ▸ New Font…** and **Font ▸ Font Properties…** capture a name, author,
+  email and freeform description alongside the font — none of it mandatory, all
+  of it optional to fill in later. Fixed-vs-variable-width is shown in
+  Properties too, but it's computed from the glyphs, never a setting.
+- **Helpers ▸ Import Raw Font Bitmap…** loads glyphs straight out of a raw
+  binary dump (start codepoint, geometry and byte layout all configurable),
+  padding a short last character with zeroes rather than rejecting the file.
+- **Fill From System Font** (currently disabled — see the
+  [user guide](docs/user-guide.md#filling-from-a-system-font)) would render an
+  installed font straight into the grid, but Canvas 2D has no access to real
+  TrueType hinting, so results at small sizes aren't good enough yet.
 
 ## Prerequisites
 
@@ -67,6 +80,26 @@ npm start          # run those bundles — needs npm run build first
 `out/` is not checked in, which is why `npm start` needs the build: the app's
 entry point is `out/main/index.js`. `npm run dev` builds on the fly and needs
 nothing beforehand.
+
+### Launching from VS Code
+
+Opening [fonteditor.code-workspace](fonteditor.code-workspace) (or just the
+folder) picks up [.vscode/launch.json](.vscode/launch.json), which is tracked
+in the repo rather than gitignored like the rest of `.vscode/` — it's a shared
+way to run the app, not a personal editor preference. Press **F5** and pick:
+
+- **Electron: Main** — runs `npm run dev` with the debugger attached to the
+  main process, so breakpoints in `src/main/` and `src/preload/` work directly.
+  This is the one to reach for most of the time; renderer code can already be
+  stepped through via the app's own **View ▸ Toggle DevTools**, sourcemapped
+  same as any other Vite dev build.
+- **Electron: Main + Renderer** — the same, plus a Chrome attach on port 9222
+  (the app is started with `--remoteDebuggingPort 9222` for this), so
+  breakpoints in `src/renderer/` work from VS Code too, without needing the
+  in-app DevTools open.
+
+No terminal typing needed either way — just the `npm run dev` you'd otherwise
+run by hand, with a debugger already attached.
 
 ## Packaging
 

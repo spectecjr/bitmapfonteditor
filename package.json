@@ -11,8 +11,11 @@
     "npm": ">=8.0.0"
   },
   "scripts": {
+    "predev": "npm run docs",
     "dev": "electron-vite dev",
+    "prebuild": "npm run docs",
     "build": "npm run typecheck && electron-vite build",
+    "docs": "node scripts/build-docs.mjs",
     "start": "electron-vite preview",
     "dist": "npm run build && electron-builder",
     "dist:dir": "npm run build && electron-builder --dir",
@@ -24,6 +27,7 @@
     "electron": "^31.7.7",
     "electron-builder": "^24.13.3",
     "electron-vite": "^2.3.0",
+    "marked": "^18.0.9",
     "typescript": "^5.6.3",
     "vite": "^5.4.11",
     "vitest": "^2.1.8"

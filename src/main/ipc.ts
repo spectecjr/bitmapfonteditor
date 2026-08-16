@@ -1,7 +1,9 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
 import { BrowserWindow, dialog, ipcMain } from 'electron'
-import type { ExportPayload, FileResult, UnsavedChoice } from '@shared/api'
+import type { BinaryFileResult, ExportPayload, FileResult, UnsavedChoice } from '@shared/api'
+import { suggestFileName } from './fileNaming'
+import { syncColumnGuides } from './menu'
 
 interface IpcContext {
   getWindow: () => BrowserWindow | null
@@ -10,7 +12,7 @@ interface IpcContext {
 }
 
 const PROJECT_FILTERS = [
-  { name: 'Font Editor Project', extensions: ['fnt.json', 'json'] },
+  { name: 'Bitmap Font', extensions: ['fnt.json', 'json'] },
   { name: 'All Files', extensions: ['*'] }
 ]
 
@@ -31,7 +33,7 @@ export function registerIpc({ getWindow, setDirty, approveClose }: IpcContext): 
     const window = getWindow()
     if (!window) return null
     const result = await dialog.showOpenDialog(window, {
-      title: 'Open Font Project',
+      title: 'Open Font',
       properties: ['openFile'],
       filters: PROJECT_FILTERS
     })
@@ -42,14 +44,17 @@ export function registerIpc({ getWindow, setDirty, approveClose }: IpcContext): 
 
   ipcMain.handle(
     'project:save',
-    async (_event, text: string, currentPath: string | null, saveAs: boolean) => {
+    async (_event, text: string, currentPath: string | null, saveAs: boolean, fontName?: string) => {
       const window = getWindow()
       if (!window) return null
       let path = currentPath
       if (!path || saveAs) {
+        // The font-name-derived suggestion only ever applies before there is a
+        // real filename to prefer instead — `path` already wins when one exists.
+        const suggested = fontName?.trim() ? `${suggestFileName(fontName)}.fnt.json` : 'untitled.fnt.json'
         const result = await dialog.showSaveDialog(window, {
-          title: 'Save Font Project',
-          defaultPath: path ?? 'untitled.fnt.json',
+          title: 'Save Font',
+          defaultPath: path ?? suggested,
           filters: PROJECT_FILTERS
         })
         if (result.canceled || !result.filePath) return null
@@ -78,6 +83,23 @@ export function registerIpc({ getWindow, setDirty, approveClose }: IpcContext): 
     await writeFile(`${base}.widths.json`, payload.widths, 'utf8')
     await writeFile(`${base}.map.json`, payload.mapping, 'utf8')
     return base
+  })
+
+  ipcMain.handle('font:importBinary', async (): Promise<BinaryFileResult | null> => {
+    const window = getWindow()
+    if (!window) return null
+    const result = await dialog.showOpenDialog(window, {
+      title: 'Import Raw Font Bitmap',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Raw Font Bitmap', extensions: ['bin', 'rom', 'fnt'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    const path = result.filePaths[0]!
+    const buffer = await readFile(path)
+    return { path, bytes: new Uint8Array(buffer) }
   })
 
   ipcMain.handle('mapping:import', async (): Promise<FileResult | null> => {
@@ -146,5 +168,9 @@ export function registerIpc({ getWindow, setDirty, approveClose }: IpcContext): 
   ipcMain.on('window:forceClose', () => {
     approveClose()
     getWindow()?.close()
+  })
+
+  ipcMain.on('view:syncColumnGuides', (_event, leftColumn: boolean, rightColumn: boolean) => {
+    syncColumnGuides(getWindow, leftColumn, rightColumn)
   })
 }

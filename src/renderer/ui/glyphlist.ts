@@ -1,9 +1,12 @@
 import type { FontDoc } from '@shared/types'
 import { definedCodepoints } from '../model/font'
 import { displayChar } from '../model/codepage'
-import { drawGlyph, prepareCanvas } from './draw'
+import { drawGlyphWithOverflow, prepareCanvas } from './draw'
 
 const THUMB_BOX = 44
+
+/** Dark red, distinct from the app's orange-red accent used for the advance marker itself. */
+const OVERFLOW_COLORS = { background: '#3a1414', ink: '#c24545' }
 
 interface Row {
   element: HTMLElement
@@ -113,7 +116,7 @@ export class GlyphListView {
     const offsetY = Math.round((THUMB_BOX - doc.height * scale) / 2)
 
     ctx.fillStyle = '#f2f2f0'
-    drawGlyph(ctx, glyph, doc.width, offsetX, offsetY, scale)
+    drawGlyphWithOverflow(ctx, glyph, doc.width, offsetX, offsetY, scale, OVERFLOW_COLORS)
 
     row.char.textContent = displayChar(doc.codepage[code])
     row.char.title = doc.codepage[code] ?? ''

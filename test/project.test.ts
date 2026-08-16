@@ -81,6 +81,88 @@ describe('project round trip', () => {
   })
 })
 
+describe('column guide visibility', () => {
+  it('defaults to hidden for a new font', () => {
+    const doc = sampleDoc()
+    expect(doc.showLeftColumn).toBe(false)
+    expect(doc.showRightColumn).toBe(false)
+  })
+
+  it('round-trips true and false independently', () => {
+    const doc = sampleDoc()
+    doc.showLeftColumn = true
+    doc.showRightColumn = false
+    const restored = parseProject(serializeProject(doc))
+    expect(restored.showLeftColumn).toBe(true)
+    expect(restored.showRightColumn).toBe(false)
+  })
+
+  it('defaults to hidden for a project saved before this existed', () => {
+    const legacy = JSON.parse(serializeProject(sampleDoc()))
+    delete legacy.showLeftColumn
+    delete legacy.showRightColumn
+    const restored = parseProject(JSON.stringify(legacy))
+    expect(restored.showLeftColumn).toBe(false)
+    expect(restored.showRightColumn).toBe(false)
+  })
+
+  it('treats anything other than a literal true as hidden', () => {
+    const broken = JSON.parse(serializeProject(sampleDoc()))
+    broken.showLeftColumn = 'yes'
+    broken.showRightColumn = 1
+    const restored = parseProject(JSON.stringify(broken))
+    expect(restored.showLeftColumn).toBe(false)
+    expect(restored.showRightColumn).toBe(false)
+  })
+})
+
+describe('metadata', () => {
+  it('round-trips every field', () => {
+    const doc = sampleDoc()
+    doc.metadata = {
+      name: 'SAM Basic',
+      author: 'Simon',
+      email: 'simon@example.com',
+      description: 'A retro 8x8 face.',
+      created: '2026-01-01T00:00:00.000Z',
+      modified: '2026-01-02T00:00:00.000Z'
+    }
+    const restored = parseProject(serializeProject(doc))
+    expect(restored.metadata).toEqual(doc.metadata)
+  })
+
+  it('defaults cleanly for a project saved before metadata existed', () => {
+    const legacy = JSON.parse(serializeProject(sampleDoc()))
+    delete legacy.metadata
+    const restored = parseProject(JSON.stringify(legacy))
+    expect(restored.metadata).toEqual({
+      name: '',
+      author: '',
+      email: '',
+      description: '',
+      created: null,
+      modified: null
+    })
+  })
+
+  it('falls back field-by-field rather than failing the whole parse on garbage', () => {
+    const broken = JSON.parse(serializeProject(sampleDoc()))
+    broken.metadata = { name: 42, author: null, created: 12345 }
+    const restored = parseProject(JSON.stringify(broken))
+    expect(restored.metadata.name).toBe('')
+    expect(restored.metadata.author).toBe('')
+    expect(restored.metadata.created).toBeNull()
+  })
+
+  it('ignores a leftover fixedWidth key from before it was derived instead of stored', () => {
+    const broken = JSON.parse(serializeProject(sampleDoc()))
+    broken.metadata = { name: 'Old Save', fixedWidth: true }
+    const restored = parseProject(JSON.stringify(broken))
+    expect(restored.metadata).not.toHaveProperty('fixedWidth')
+    expect(restored.metadata.name).toBe('Old Save')
+  })
+})
+
 describe('project validation', () => {
   const valid = serializeProject(sampleDoc())
 

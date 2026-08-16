@@ -25,6 +25,51 @@ export function drawGlyph(
   }
 }
 
+export interface OverflowColors {
+  /** Background for every cell past the advance width, on or off. */
+  background: string
+  /** A set pixel past the advance width — brighter than `background` so it still reads as ink. */
+  ink: string
+}
+
+/**
+ * Like `drawGlyph`, but instead of stopping at the advance width it keeps going
+ * to `fontWidth` and tints everything past the marker dark red — the character
+ * map wants the whole design surface visible, with the part export throws away
+ * clearly marked, rather than silently blank like the live preview strip.
+ *
+ * `drawGlyph` itself never touches `ctx.fillStyle` — callers set the ink color
+ * first — so this reads that caller-set color, uses it for the live region same
+ * as always, and only swaps in the overflow colors for the region past advance.
+ */
+export function drawGlyphWithOverflow(
+  ctx: CanvasRenderingContext2D,
+  glyph: Glyph,
+  fontWidth: number,
+  x0: number,
+  y0: number,
+  scale: number,
+  colors: OverflowColors
+): void {
+  const advance = Math.min(glyph.width, fontWidth)
+  const inkColor = ctx.fillStyle
+
+  if (advance < fontWidth) {
+    ctx.fillStyle = colors.background
+    ctx.fillRect(x0 + advance * scale, y0, (fontWidth - advance) * scale, glyph.rows.length * scale)
+
+    ctx.fillStyle = colors.ink
+    for (let y = 0; y < glyph.rows.length; y++) {
+      for (let x = advance; x < fontWidth; x++) {
+        if (getBit(glyph, fontWidth, x, y)) ctx.fillRect(x0 + x * scale, y0 + y * scale, scale, scale)
+      }
+    }
+  }
+
+  ctx.fillStyle = inkColor
+  drawGlyph(ctx, glyph, fontWidth, x0, y0, scale, true)
+}
+
 /** Sets up a canvas for the current DPI and returns its CSS-pixel size. */
 export function prepareCanvas(
   canvas: HTMLCanvasElement,

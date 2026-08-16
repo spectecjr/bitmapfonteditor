@@ -48,6 +48,25 @@ export const GUIDE_LABELS: Readonly<Record<GuideName, string>> = {
   rightColumn: 'Right column'
 }
 
+/**
+ * Descriptive information about the font, none of it mandatory and none of it
+ * affecting the bitmap. `created`/`modified` are set by the save path, not by
+ * whoever is editing the fields — first successful save stamps `created`, and
+ * every save after that updates `modified`.
+ *
+ * Whether the font is fixed- or variable-width isn't stored here — it's
+ * derived from the glyphs themselves (see `isFixedWidth` in model/font.ts), so
+ * it can never drift out of sync with what the font actually is.
+ */
+export interface FontMetadata {
+  name: string
+  author: string
+  email: string
+  description: string
+  created: string | null
+  modified: string | null
+}
+
 /** The whole editable document. `glyphs` is sparse: any of codepoints 0-255 may be absent. */
 export interface FontDoc {
   version: 1
@@ -65,7 +84,17 @@ export interface FontDoc {
   leftColumn: number
   /** Column boundary marking the end of the last kept column. */
   rightColumn: number
+  /**
+   * Whether the left/right column guides are currently shown. Saved with the
+   * font rather than treated as a global app preference (unlike the three
+   * horizontal guides): they only matter to fonts actually using the
+   * narrower-cell-inside-a-wider-cell technique, so the setting travels with
+   * the specific font it applies to. Defaults to hidden.
+   */
+  showLeftColumn: boolean
+  showRightColumn: boolean
   glyphs: Record<number, Glyph>
   /** codepoint -> the Unicode character it represents, shown in the glyph list. */
   codepage: Record<number, string>
+  metadata: FontMetadata
 }

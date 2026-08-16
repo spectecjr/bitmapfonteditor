@@ -7,6 +7,7 @@ import {
   MIN_FONT_HEIGHT,
   MIN_FONT_WIDTH,
   type FontDoc,
+  type FontMetadata,
   type Glyph
 } from '@shared/types'
 import { cloneGlyph, createGlyph, createRows, widthMask } from './glyph'
@@ -54,10 +55,33 @@ export function defaultRightColumn(width: number): number {
   return Math.max(0, clampWidth(width) - 1)
 }
 
+/** None of this is mandatory, and none of it affects the bitmap — see FontMetadata. */
+export function createDefaultMetadata(): FontMetadata {
+  return {
+    name: '',
+    author: '',
+    email: '',
+    description: '',
+    created: null,
+    modified: null
+  }
+}
+
+/**
+ * Whether every defined glyph's advance equals the cell width — computed
+ * fresh rather than stored, so it always matches reality even after glyphs
+ * are added, resized or hand-edited later. A font with no glyphs at all counts
+ * as fixed: there is nothing to contradict it.
+ */
+export function isFixedWidth(doc: FontDoc): boolean {
+  return Object.values(doc.glyphs).every((glyph) => glyph.width === doc.width)
+}
+
 export function createFont(
   width = DEFAULT_FONT_WIDTH,
   height = DEFAULT_FONT_HEIGHT,
-  codepage: Record<number, string> = {}
+  codepage: Record<number, string> = {},
+  metadata: Partial<FontMetadata> = {}
 ): FontDoc {
   const cellWidth = clampWidth(width)
   const cellHeight = clampHeight(height)
@@ -70,8 +94,11 @@ export function createFont(
     capHeight: defaultCapHeight(cellHeight),
     leftColumn: defaultLeftColumn(cellWidth),
     rightColumn: defaultRightColumn(cellWidth),
+    showLeftColumn: false,
+    showRightColumn: false,
     glyphs: {},
-    codepage
+    codepage,
+    metadata: { ...createDefaultMetadata(), ...metadata }
   }
 }
 
@@ -89,8 +116,11 @@ export function cloneFont(doc: FontDoc): FontDoc {
     capHeight: doc.capHeight,
     leftColumn: doc.leftColumn,
     rightColumn: doc.rightColumn,
+    showLeftColumn: doc.showLeftColumn,
+    showRightColumn: doc.showRightColumn,
     glyphs,
-    codepage: { ...doc.codepage }
+    codepage: { ...doc.codepage },
+    metadata: { ...doc.metadata }
   }
 }
 
@@ -163,4 +193,27 @@ export function populateFromCodepage(doc: FontDoc, codepage: Record<number, stri
   for (const key of Object.keys(codepage)) {
     addCodepoint(doc, Number(key))
   }
+}
+
+export interface FontCreationOptions {
+  width: number
+  height: number
+  /** Inclusive codepoint range to populate with blank glyphs; order doesn't matter. */
+  firstCodepoint: number
+  lastCodepoint: number
+  codepage: Record<number, string>
+  metadata?: Partial<FontMetadata>
+}
+
+/**
+ * A new font with a contiguous run of codepoints already defined — what the New
+ * Font dialog builds. `createDefaultDoc` in main.ts is the same call with the
+ * app's stock defaults, so startup behaviour is this function under the hood.
+ */
+export function buildFont(options: FontCreationOptions): FontDoc {
+  const doc = createFont(options.width, options.height, options.codepage, options.metadata)
+  const lo = Math.max(0, Math.min(255, Math.min(options.firstCodepoint, options.lastCodepoint)))
+  const hi = Math.max(0, Math.min(255, Math.max(options.firstCodepoint, options.lastCodepoint)))
+  for (let code = lo; code <= hi; code++) addCodepoint(doc, code)
+  return doc
 }

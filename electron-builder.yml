@@ -14,6 +14,13 @@ files:
   - out/**
   - package.json
 
+# Unpacked next to app.asar rather than inside it (unlike `files` above), so
+# it stays a normal folder on disk — Help ▸ Open Sample Fonts Folder points
+# straight at it, and it's just as easy to browse to from File ▸ Open Font….
+extraResources:
+  - from: sample
+    to: sample
+
 win:
   target: nsis
 

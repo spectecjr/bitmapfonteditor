@@ -12,6 +12,9 @@ A walkthrough of the font editor, from a blank grid to exported files.
 - [The preview strip](#the-preview-strip)
 - [Codepoints and character mapping](#codepoints-and-character-mapping)
 - [Font dimensions](#font-dimensions)
+- [Creating a font and Font Properties](#creating-a-font-and-font-properties)
+- [Importing a raw font bitmap](#importing-a-raw-font-bitmap)
+- [Filling from a system font](#filling-from-a-system-font)
 - [Saving and exporting](#saving-and-exporting)
 - [Checking an export](#checking-an-export)
 - [Menu reference](#menu-reference)
@@ -52,8 +55,10 @@ they never change a single exported bit.
 | Character map | Every defined codepoint, on the right |
 | Preview | Editable sample text drawn with the live font |
 
-A new font starts as an 8×8 cell with codepoints 0x20–0x7F defined and the first
-one selected, with the full SAM Coupe CP437 mapping loaded.
+The app itself starts on an 8×8 cell with codepoints 0x20–0x7F defined and the
+first one selected, with the full SAM Coupe CP437 mapping loaded — the same
+defaults **File ▸ New Font…** offers, though its dialog lets you change any of
+them before creating anything.
 
 ## Drawing a glyph
 
@@ -78,7 +83,7 @@ The red vertical line with the triangle handles is the advance marker. Drag it
 anywhere along its length to set where this character ends.
 
 Pixels to the right of the marker are **dimmed but still there**, and still
-editable. They survive saving and reloading the project. They are only dropped
+editable. They survive saving and reloading the font. They are only dropped
 when you export. That means you can pull the marker in and out while working
 without ever losing the artwork behind it.
 
@@ -115,9 +120,16 @@ them at 1 and 7 on an 8×8 cell you can draw a 6×8 font and see exactly which
 columns get trimmed. They do **not** crop anything on export; every column is
 still written out, and the guide positions are simply recorded in the sidecar.
 
-Each guide has a show/hide tick under **View**. The column guides start hidden.
-Hidden guides are not draggable. **Font ▸ Guidelines…** (`Ctrl+G`) sets all five
-numerically.
+Each guide has a show/hide tick under **View**. Hidden guides are not
+draggable. **Font ▸ Guidelines…** (`Ctrl+G`) sets all five numerically.
+
+Cap height, x-height and baseline visibility is a general app preference —
+whatever you last set stays that way for every font you open. The **column
+guides start hidden and their shown/hidden state is saved with the font**
+rather than remembered globally, since they only matter to a font actually
+using the narrower-cell technique: switching to a different font can show a
+different state for them, and toggling one marks the document as having
+unsaved changes, the same as any other property of the font.
 
 ## The character map
 
@@ -130,6 +142,13 @@ left edge to widen it and it will go to two, three or more columns.
 
 `Ctrl+Up` and `Ctrl+Down` step through the list without using the mouse.
 
+For a variable-width glyph, the thumbnail draws the whole cell rather than
+stopping at the advance marker — the columns past it are shown in **dark red**
+(brighter red for any pixel that happens to be set there) so it is obvious at a
+glance how much of the design surface a glyph isn't actually using. A
+fixed-width glyph, whose advance equals the cell width, has nothing to show
+there and looks unchanged.
+
 ## Reference glyphs
 
 **Shift-click** any row to pin that glyph as a reference. It is drawn at half
@@ -138,7 +157,7 @@ live pixels always read as solid. It is the quickest way to make an `O` and a `Q
 agree, or to line an accent up with its base letter.
 
 Shift-click the same row again to clear it, or use **View ▸ Clear Reference
-Glyph**. The reference clears itself if you open another project or delete that
+Glyph**. The reference clears itself if you open another font or delete that
 codepoint.
 
 ## The preview strip
@@ -187,13 +206,113 @@ Watch the top bar: the bytes-per-line figure and total export size update as you
 change the width, which is the quickest way to see whether a font still fits a
 budget.
 
+## Creating a font and Font Properties
+
+**File ▸ New Font** (`Ctrl+N`) opens a dialog rather than resetting the document
+outright — cancel it and nothing changes. It asks for:
+
+- **Name, author, email, description** — all optional, and all still editable
+  later via Font Properties. The description is a scrollable box with no
+  practical length limit.
+- **Cell width in bytes/line, cell height in lines, first and last codepoint** —
+  these exist only to seed the new font. Afterwards, change them via **Font ▸
+  Dimensions…** and **Font ▸ Add/Remove Codepoint** instead — Font Properties
+  shows the *current* cell size and codepoint range, not what you originally
+  typed here.
+- **Load Mapping From Disk…** — optional; if you skip it, the new font starts
+  with the default SAM Coupe CP437 mapping, same as before.
+
+A note above the buttons updates live as you change the geometry fields, so you
+can see the resulting pixel size and character count before creating anything.
+There is no fixed/variable-width choice here — every glyph starts at the full
+cell width, which already reads as fixed-width until you narrow one.
+
+**Font ▸ Font Properties…** reopens the name/author/email/description fields for
+editing at any time, alongside read-only rows: fixed-width, cell size,
+codepoints defined, created/modified dates, and the projected size in bytes of
+the exported `.bin` for the font as it stands right now. **Fixed width** is not
+a setting — it is computed on the spot from whether every defined glyph is
+currently at the full cell width, so it can never fall out of sync with the
+font as you're editing it. **Created** is stamped the first time you actually
+save the document to disk (`File ▸ Save Font`, by any path, not by clicking
+Apply in this dialog), and never changes after that; **modified** updates on
+every subsequent save. Both read "Not yet
+saved" until the first save happens.
+
+## Importing a raw font bitmap
+
+**Helpers ▸ Import Raw Font Bitmap…** reads glyphs straight out of a raw binary
+dump — a ROM extract, another tool's output, anything that isn't already a
+`.fnt.json`. Pick a file, then set:
+
+- **Start codepoint** — where the file's first character lands (default 32).
+- **Lines per character** and **bytes per line** — the file's own geometry
+  (defaults 8 and 1, i.e. plain 8×8/1bpp).
+- **Byte layout** — *row-major* reads each byte as 8px across one row of the
+  glyph, the same layout this app's own `.bin` export uses. *Column-major*
+  keeps the same byte count per character but reads it 8px-wide-band by
+  8px-wide-band, top to bottom, instead. The two are identical for any font
+  8px or narrower — the choice only matters once a glyph spans more than one
+  byte per line. If an import doesn't look right, this is the first thing to
+  try flipping.
+
+A note above the buttons shows the resulting character count live, and warns if
+the file's size isn't an exact multiple of one character (the short last
+character is padded with zeroes, not dropped) or if the codepoint range runs
+past 255 (those characters are dropped). If the imported geometry differs from
+the current cell, you get the same "this will discard pixels" warning as
+resizing normally would, and the whole import lands as one undo step.
+
+## Filling from a system font
+
+> **Currently disabled.** This does not appear in the Helpers menu right now.
+> Canvas 2D has no access to a font's real TrueType hinting — the instructions
+> a font carries to keep its stems and curves crisp at small sizes — so
+> rendering straight from an installed font at 8-16px comes out rougher than a
+> proper small-bitmap renderer would produce, even with the supersampling
+> described below. The feature is switched off until there's a better
+> rendering approach; the rest of this section describes what it does once
+> it's back.
+
+**Helpers ▸ Fill From System Font…** renders every glyph that has *both* a
+defined codepoint and a character mapping, using whatever font family name you
+type — the exact installed family name, the same string you'd use in CSS. There
+is no dropdown of installed fonts; type it as you would anywhere else.
+
+It measures the font's own metrics to place the baseline, cap height and
+x-height guides, then rasterises each mapped character several times larger
+than the cell and downsamples it back down before thresholding to 1-bit. That
+downsampling step stands in for something the browser genuinely cannot do:
+Canvas has no access to a font's TrueType hinting — the instructions a font
+carries to keep its stems and curves crisp at small sizes — so rendering
+straight at 8-16px would look rougher than the same text on a hinting-aware
+renderer. Supersampling narrows that gap but does not close it. Each glyph's
+advance width comes from the font's own measured character width, plus one
+pixel of gap. If any glyph needs more room than the current cell width, you are
+offered the chance to widen the font to fit before anything is drawn — decline,
+and the fill does not happen at all, rather than silently clipping glyphs.
+
+This is inherently a rendering operation: results depend entirely on the font
+you pick, and are worth a visual check afterwards rather than trusted blindly.
+
 ## Saving and exporting
 
-**Projects** (`.fnt.json`) are what you save while working — `Ctrl+S`, or
+**Font files** (`.fnt.json`) are what you save while working — `Ctrl+S`, or
 `Ctrl+Shift+S` for Save As. The format is lossless: it keeps the pixels hidden
-past each advance marker, all five guides, and the character mapping. Reopening a
-project puts you back exactly where you were. Closing with unsaved changes
-prompts you first, and the title bar shows a `•` while the document is dirty.
+past each advance marker, all five guides, the character mapping, and the
+[Font Properties](#creating-a-font-and-font-properties) metadata, including the
+created/modified dates it stamps on save. Reopening a font puts you back exactly
+where you were. Closing with unsaved changes prompts you first, and the title
+bar shows a `•` while the document is dirty.
+
+The **title bar** reads `Filename.fnt.json` until the font has a name in Font
+Properties, at which point it becomes `Font Name (Filename.fnt.json)` — the
+name is display-only and never renames the file underneath it.
+
+The **first** time you save a font that already has a name, the Save dialog
+suggests a filename generated from it, with anything your OS doesn't allow in a
+filename swapped for an underscore. Every save after that just reuses the
+file's actual name, the same as before.
 
 **Export** (`File ▸ Export Font…`, `Ctrl+E`) is one-way and writes three files
 from one base name you choose:
@@ -242,10 +361,10 @@ node scripts/decode-font.mjs font.bin font.widths.json --code 0x41
 
 | Item | Shortcut |
 | --- | --- |
-| New Font | `Ctrl+N` |
-| Open Project… | `Ctrl+O` |
-| Save Project | `Ctrl+S` |
-| Save Project As… | `Ctrl+Shift+S` |
+| New Font… | `Ctrl+N` |
+| Open Font… | `Ctrl+O` |
+| Save Font | `Ctrl+S` |
+| Save Font As… | `Ctrl+Shift+S` |
 | Export Font… | `Ctrl+E` |
 | Exit | `Alt+F4` |
 
@@ -271,11 +390,14 @@ node scripts/decode-font.mjs font.bin font.widths.json --code 0x41
 | Fit Width to Ink (1px gap) | `Ctrl+T` |
 | Fit Width to Ink (tight) | `Ctrl+Shift+T` |
 | Reset Width to Maximum | — |
+| Font Properties… | — |
 
 ### Helpers
 
 Populate CP437 Table (SAM Coupe), Populate CP437 Table (stock), Edit Mapping for
-Glyph…, Import Mapping…, Export Mapping… — none have shortcuts.
+Glyph…, Import Mapping…, Export Mapping…, Import Raw Font Bitmap… — none have
+shortcuts. Fill From System Font… is
+[currently disabled](#filling-from-a-system-font) and does not appear here.
 
 ### View
 
@@ -302,7 +424,7 @@ field.
 ## Things worth knowing
 
 - **Pixels past the advance marker are kept, not deleted.** They live in the
-  project file and are only zeroed at export.
+  font file and are only zeroed at export.
 - **Guides never affect the bitmap** — including the column guides, which do not
   crop anything.
 - **The mapping is not in the font data.** It is a separate file, and only
@@ -311,3 +433,7 @@ field.
   the advance you gave them.
 - **Undo covers the whole document**, so a mistaken resize or a stray guide drag
   is one `Ctrl+Z` away.
+- **Font Properties only stores name/author/email/description/dates.** The cell
+  size, codepoint range and fixed/variable-width state you see there are never
+  remembered settings — they're computed fresh from the font every time the
+  dialog opens, so they always reflect what the font actually is right now.

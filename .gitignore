@@ -13,6 +13,11 @@ release/
 *.tsbuildinfo
 .eslintcache
 
+# Generated from docs/*.md by scripts/build-docs.mjs (npm run docs, or
+# automatically before dev/build) — the in-app Help ▸ User Guide viewer's
+# source of truth is the markdown, not this.
+src/renderer/public/docs/
+
 # Logs
 *.log
 npm-debug.log*
@@ -22,8 +27,10 @@ npm-debug.log*
 .env.local
 
 # Editor and OS cruft. fonteditor.code-workspace is deliberately tracked — it is
-# the shared workspace definition, not per-user state.
-.vscode/
+# the shared workspace definition, not per-user state. launch.json is tracked
+# too: it's how F5 launches and debugs the app, not a personal preference.
+.vscode/*
+!.vscode/launch.json
 .idea/
 *.swp
 .DS_Store

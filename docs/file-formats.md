@@ -97,8 +97,18 @@ Everything else matches stock CP437, including the 0x00–0x1F pictographs.
   "capHeight": 0,
   "leftColumn": 1,
   "rightColumn": 7,
+  "showLeftColumn": false,
+  "showRightColumn": false,
   "glyphs": [{ "code": 65, "width": 7, "rows": ["3C", "42", "..."] }],
-  "codepage": { "65": "A" }
+  "codepage": { "65": "A" },
+  "metadata": {
+    "name": "",
+    "author": "",
+    "email": "",
+    "description": "",
+    "created": null,
+    "modified": null
+  }
 }
 ```
 
@@ -107,9 +117,25 @@ existed loads with the default for its cell (one descender row, x-height at
 roughly 55% of the cap height, cap height at the top, and one column trimmed from
 each side).
 
+`showLeftColumn`/`showRightColumn` are the shown/hidden state of the two
+column guides — optional on read, defaulting to `false` for a project written
+before this existed, and anything other than the literal `true` is treated as
+`false` rather than rejected. Cap height, x-height and baseline visibility is
+not stored here at all: it's an app-wide preference, not a per-font one.
+
 Rows are hex strings, one per line, sized to `bytesPerLine × 2` digits and holding
 the **full cell width** — including pixels past the advance marker. Saving and
 reopening a project is exact.
+
+`metadata` is optional as a whole block, and every field within it is optional
+too — a project written before it existed, or with any field missing or the
+wrong type, loads with `''`/`null` defaults for whatever is absent rather than
+failing to parse. `created`/`modified` are ISO 8601 timestamps stamped by the
+editor itself on save, not user-editable text. Whether a font is fixed- or
+variable-width is not stored here at all — the editor computes it on the fly
+from whether every glyph is at the full cell width, so nothing in this file
+governs it and a stray `fixedWidth` key from an older build is simply ignored
+on read.
 
 ## Checking an export
 

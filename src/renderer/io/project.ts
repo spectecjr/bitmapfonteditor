@@ -1,7 +1,8 @@
-import type { FontDoc, Glyph } from '@shared/types'
+import type { FontDoc, FontMetadata, Glyph } from '@shared/types'
 import { MAX_FONT_HEIGHT, MAX_FONT_WIDTH } from '@shared/types'
 import {
   bytesPerLine,
+  createDefaultMetadata,
   defaultBaseline,
   defaultCapHeight,
   defaultLeftColumn,
@@ -32,8 +33,13 @@ export interface ProjectFile {
   capHeight: number
   leftColumn: number
   rightColumn: number
+  /** Optional on read: added after the first projects were written, default hidden. */
+  showLeftColumn?: boolean
+  showRightColumn?: boolean
   glyphs: ProjectGlyph[]
   codepage: Record<string, string>
+  /** Optional on read: added after the first projects were written. */
+  metadata?: Partial<FontMetadata>
 }
 
 function toHex(row: number, digits: number): string {
@@ -66,8 +72,11 @@ export function serializeProject(doc: FontDoc): string {
     capHeight: doc.capHeight,
     leftColumn: doc.leftColumn,
     rightColumn: doc.rightColumn,
+    showLeftColumn: doc.showLeftColumn,
+    showRightColumn: doc.showRightColumn,
     glyphs,
-    codepage
+    codepage,
+    metadata: doc.metadata
   }
   return `${JSON.stringify(file, null, 2)}\n`
 }
@@ -83,6 +92,27 @@ function readInt(value: unknown, name: string, min: number, max: number): number
     fail(`${name} must be an integer between ${min} and ${max} (got ${JSON.stringify(value)})`)
   }
   return value
+}
+
+/**
+ * Metadata is entirely optional (per-field, not just as a whole block) and none
+ * of it is validated as strictly as the geometry — a garbled author name should
+ * never stop a font from loading. Anything the wrong type just falls back to
+ * the default rather than failing the parse.
+ */
+function readMetadata(value: unknown): FontMetadata {
+  const raw = (typeof value === 'object' && value !== null ? value : {}) as Partial<FontMetadata>
+  const defaults = createDefaultMetadata()
+  const str = (v: unknown, fallback: string): string => (typeof v === 'string' ? v : fallback)
+  const dateOrNull = (v: unknown): string | null => (typeof v === 'string' ? v : null)
+  return {
+    name: str(raw.name, defaults.name),
+    author: str(raw.author, defaults.author),
+    email: str(raw.email, defaults.email),
+    description: str(raw.description, defaults.description),
+    created: dateOrNull(raw.created),
+    modified: dateOrNull(raw.modified)
+  }
 }
 
 export function parseProject(text: string): FontDoc {
@@ -115,6 +145,8 @@ export function parseProject(text: string): FontDoc {
   const capHeight = guide(file.capHeight, 'capHeight', height, defaultCapHeight(height))
   const leftColumn = guide(file.leftColumn, 'leftColumn', width, defaultLeftColumn(width))
   const rightColumn = guide(file.rightColumn, 'rightColumn', width, defaultRightColumn(width))
+  const showLeftColumn = file.showLeftColumn === true
+  const showRightColumn = file.showRightColumn === true
 
   const mask = widthMask(width)
   const glyphs: Record<number, Glyph> = {}
@@ -156,7 +188,10 @@ export function parseProject(text: string): FontDoc {
     capHeight,
     leftColumn,
     rightColumn,
+    showLeftColumn,
+    showRightColumn,
     glyphs,
-    codepage
+    codepage,
+    metadata: readMetadata(file.metadata)
   }
 }

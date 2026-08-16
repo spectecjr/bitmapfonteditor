@@ -1,25 +1,30 @@
-import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, Menu, shell, type MenuItemConstructorOptions } from 'electron'
 import type { ViewState } from '@shared/api'
-import type { GuideName } from '@shared/types'
+import type { HorizontalGuide, VerticalGuide } from '@shared/types'
+import { openDocsWindow } from './docsWindow'
+import { sampleFontsDir } from './paths'
 
 /**
  * View preferences live here rather than in the renderer: the menu ticks are the
  * only way to change them, so main is the single source of truth and pushes the
  * whole object down whenever it changes.
  *
- * The column guides start hidden — they only matter when you are designing a
- * narrow font inside a wider grid.
+ * The column guides are NOT here — their visibility lives on the FontDoc and is
+ * saved with the font (see `syncColumnGuideVisibility` in shared/api.ts), since
+ * they only matter to fonts actually using the narrower-cell technique, unlike
+ * these three which are relevant to virtually anything you'd draw.
  */
 const viewState: ViewState = {
   guides: {
     capHeight: true,
     xHeight: true,
-    baseline: true,
-    leftColumn: false,
-    rightColumn: false
+    baseline: true
   },
   previewInverted: false
 }
+
+/** Column guide visibility as of the last `syncColumnGuideVisibility` call — starts hidden. */
+let columnGuides: Record<VerticalGuide, boolean> = { leftColumn: false, rightColumn: false }
 
 export function currentViewState(): ViewState {
   return viewState
@@ -27,6 +32,21 @@ export function currentViewState(): ViewState {
 
 export function pushViewState(window: BrowserWindow | null): void {
   window?.webContents.send('view:state', viewState)
+}
+
+/**
+ * Rebuilds the menu with fresh column-guide checkboxes. Cheap enough to call on
+ * every document load (New Font, Open Font, Undo/Redo) — those are the only
+ * times the checkboxes could disagree with the document without a click having
+ * happened to keep them in sync.
+ */
+export function syncColumnGuides(
+  getWindow: () => BrowserWindow | null,
+  leftColumn: boolean,
+  rightColumn: boolean
+): void {
+  columnGuides = { leftColumn, rightColumn }
+  buildMenu(getWindow)
 }
 
 /**
@@ -58,7 +78,7 @@ export function buildMenu(getWindow: () => BrowserWindow | null): void {
   })
 
   /** Electron flips `checked` for us before the click handler runs. */
-  const guideToggle = (guide: GuideName, label: string): MenuItemConstructorOptions => ({
+  const guideToggle = (guide: HorizontalGuide, label: string): MenuItemConstructorOptions => ({
     label,
     type: 'checkbox',
     checked: viewState.guides[guide],
@@ -68,15 +88,28 @@ export function buildMenu(getWindow: () => BrowserWindow | null): void {
     }
   })
 
+  /**
+   * Unlike `guideToggle`, the source of truth here is the renderer's FontDoc,
+   * not this module — so the click just asks the renderer to flip it and mark
+   * the document dirty, and `syncColumnGuides` (called back from there) is what
+   * actually keeps this checkbox honest afterward.
+   */
+  const columnGuideToggle = (guide: VerticalGuide, label: string): MenuItemConstructorOptions => ({
+    label,
+    type: 'checkbox',
+    checked: columnGuides[guide],
+    click: cmd(guide === 'leftColumn' ? 'view:toggleLeftColumn' : 'view:toggleRightColumn')
+  })
+
   const template: MenuItemConstructorOptions[] = [
     {
       label: '&File',
       submenu: [
         { label: 'New Font', accelerator: 'CmdOrCtrl+N', click: cmd('file:new') },
-        { label: 'Open Project…', accelerator: 'CmdOrCtrl+O', click: cmd('file:open') },
+        { label: 'Open Font…', accelerator: 'CmdOrCtrl+O', click: cmd('file:open') },
         { type: 'separator' },
-        { label: 'Save Project', accelerator: 'CmdOrCtrl+S', click: cmd('file:save') },
-        { label: 'Save Project As…', accelerator: 'CmdOrCtrl+Shift+S', click: cmd('file:saveAs') },
+        { label: 'Save Font', accelerator: 'CmdOrCtrl+S', click: cmd('file:save') },
+        { label: 'Save Font As…', accelerator: 'CmdOrCtrl+Shift+S', click: cmd('file:saveAs') },
         { type: 'separator' },
         { label: 'Export Font…', accelerator: 'CmdOrCtrl+E', click: cmd('file:export') },
         { type: 'separator' },
@@ -126,7 +159,9 @@ export function buildMenu(getWindow: () => BrowserWindow | null): void {
           accelerator: 'CmdOrCtrl+Shift+T',
           click: cmd('font:fitWidthTight')
         },
-        { label: 'Reset Width to Maximum', click: cmd('font:resetWidth') }
+        { label: 'Reset Width to Maximum', click: cmd('font:resetWidth') },
+        { type: 'separator' },
+        { label: 'Font Properties…', click: cmd('font:properties') }
       ]
     },
     {
@@ -137,7 +172,15 @@ export function buildMenu(getWindow: () => BrowserWindow | null): void {
         { type: 'separator' },
         { label: 'Edit Mapping for Glyph…', click: cmd('helpers:editMapping') },
         { label: 'Import Mapping…', click: cmd('helpers:importMapping') },
-        { label: 'Export Mapping…', click: cmd('helpers:exportMapping') }
+        { label: 'Export Mapping…', click: cmd('helpers:exportMapping') },
+        { type: 'separator' },
+        { label: 'Import Raw Font Bitmap…', click: cmd('helpers:importRawFont') }
+        // 'Fill From System Font…' (helpers:fillSystemFont) is disabled for now —
+        // Canvas 2D has no access to a font's TrueType hinting, so glyphs
+        // rasterised straight from an installed font look rougher than a proper
+        // small-bitmap renderer would produce. The command, model/systemFont.ts
+        // and ui/systemFontFill.ts are all still in place; re-add the menu item
+        // above once there's a better rendering approach.
       ]
     },
     {
@@ -147,8 +190,8 @@ export function buildMenu(getWindow: () => BrowserWindow | null): void {
         guideToggle('xHeight', 'Show x-height Guide'),
         guideToggle('baseline', 'Show Baseline Guide'),
         { type: 'separator' },
-        guideToggle('leftColumn', 'Show Left Column Guide'),
-        guideToggle('rightColumn', 'Show Right Column Guide'),
+        columnGuideToggle('leftColumn', 'Show Left Column Guide'),
+        columnGuideToggle('rightColumn', 'Show Right Column Guide'),
         { type: 'separator' },
         {
           label: 'Preview: Black on White',
@@ -175,7 +218,14 @@ export function buildMenu(getWindow: () => BrowserWindow | null): void {
     },
     {
       label: 'H&elp',
-      submenu: [{ label: `About ${app.getName()}`, click: cmd('help:about') }]
+      submenu: [
+        { label: 'User Guide', click: () => openDocsWindow('user-guide') },
+        { label: 'File Formats Reference', click: () => openDocsWindow('file-formats') },
+        { type: 'separator' },
+        { label: 'Open Sample Fonts Folder', click: () => void shell.openPath(sampleFontsDir()) },
+        { type: 'separator' },
+        { label: `About ${app.getName()}`, click: cmd('help:about') }
+      ]
     }
   ]
 

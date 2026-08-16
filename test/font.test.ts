@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import {
   addCodepoint,
+  buildFont,
   bytesPerLine,
   clampGuide,
+  cloneFont,
+  createDefaultMetadata,
   createFont,
   defaultBaseline,
   defaultLeftColumn,
   defaultRightColumn,
   defaultXHeight,
   definedCodepoints,
+  isFixedWidth,
   populateFromCodepage,
   removeCodepoint,
   resizeFont,
@@ -78,6 +82,17 @@ describe('guidelines', () => {
     expect(defaultRightColumn(1)).toBe(0)
   })
 
+  it('defaults the column guides to hidden, and carries visibility through cloneFont', () => {
+    const doc = createFont(8, 8)
+    expect(doc.showLeftColumn).toBe(false)
+    expect(doc.showRightColumn).toBe(false)
+
+    doc.showLeftColumn = true
+    const clone = cloneFont(doc)
+    expect(clone.showLeftColumn).toBe(true)
+    expect(clone.showRightColumn).toBe(false)
+  })
+
   it('clamps to the cell as a row boundary, so height itself is legal', () => {
     expect(clampGuide(-3, 8)).toBe(0)
     expect(clampGuide(8, 8)).toBe(8) // the bottom edge
@@ -108,6 +123,84 @@ describe('guidelines', () => {
 
     resizeFont(doc, 12, 8)
     expect(doc.rightColumn).toBe(4) // absolute, like every other guide
+  })
+})
+
+describe('metadata', () => {
+  it('defaults to empty, unset dates', () => {
+    expect(createDefaultMetadata()).toEqual({
+      name: '',
+      author: '',
+      email: '',
+      description: '',
+      created: null,
+      modified: null
+    })
+  })
+
+  it('createFont accepts a partial override and fills in the rest', () => {
+    const doc = createFont(8, 8, {}, { author: 'Simon', email: 'simon@example.com' })
+    expect(doc.metadata).toEqual({ ...createDefaultMetadata(), author: 'Simon', email: 'simon@example.com' })
+  })
+})
+
+describe('isFixedWidth', () => {
+  it('is true for a font with no glyphs at all', () => {
+    expect(isFixedWidth(createFont(8, 8))).toBe(true)
+  })
+
+  it('is true when every glyph is at the full cell width', () => {
+    const doc = createFont(8, 8)
+    addCodepoint(doc, 65)
+    addCodepoint(doc, 66)
+    expect(isFixedWidth(doc)).toBe(true)
+  })
+
+  it('is false as soon as one glyph is narrower than the cell', () => {
+    const doc = createFont(8, 8)
+    addCodepoint(doc, 65)
+    addCodepoint(doc, 66)
+    doc.glyphs[66]!.width = 5
+    expect(isFixedWidth(doc)).toBe(false)
+  })
+
+  it('recovers to true once the narrow glyph is reset', () => {
+    const doc = createFont(8, 8)
+    addCodepoint(doc, 65)
+    doc.glyphs[65]!.width = 3
+    expect(isFixedWidth(doc)).toBe(false)
+    doc.glyphs[65]!.width = 8
+    expect(isFixedWidth(doc)).toBe(true)
+  })
+})
+
+describe('buildFont', () => {
+  it('populates every codepoint in the inclusive range', () => {
+    const doc = buildFont({ width: 8, height: 8, firstCodepoint: 65, lastCodepoint: 67, codepage: {} })
+    expect(definedCodepoints(doc)).toEqual([65, 66, 67])
+  })
+
+  it('accepts the range given backwards', () => {
+    const doc = buildFont({ width: 8, height: 8, firstCodepoint: 67, lastCodepoint: 65, codepage: {} })
+    expect(definedCodepoints(doc)).toEqual([65, 66, 67])
+  })
+
+  it('clips the range to 0..255', () => {
+    const doc = buildFont({ width: 8, height: 8, firstCodepoint: 253, lastCodepoint: 258, codepage: {} })
+    expect(definedCodepoints(doc)).toEqual([253, 254, 255])
+  })
+
+  it('carries the codepage and metadata through', () => {
+    const doc = buildFont({
+      width: 8,
+      height: 8,
+      firstCodepoint: 65,
+      lastCodepoint: 65,
+      codepage: { 65: 'A' },
+      metadata: { name: 'Test Font' }
+    })
+    expect(doc.codepage[65]).toBe('A')
+    expect(doc.metadata.name).toBe('Test Font')
   })
 })
 

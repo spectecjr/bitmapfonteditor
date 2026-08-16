@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
+  BinaryFileResult,
   EditorApi,
   ExportPayload,
   FileResult,
@@ -10,10 +11,11 @@ import type {
 /** Deliberately narrow: the renderer never sees `fs`, `path` or raw ipcRenderer. */
 const api: EditorApi = {
   openProject: () => ipcRenderer.invoke('project:open') as Promise<FileResult | null>,
-  saveProject: (text, currentPath, saveAs) =>
-    ipcRenderer.invoke('project:save', text, currentPath, saveAs) as Promise<string | null>,
+  saveProject: (text, currentPath, saveAs, fontName) =>
+    ipcRenderer.invoke('project:save', text, currentPath, saveAs, fontName) as Promise<string | null>,
   exportFont: (payload: ExportPayload) =>
     ipcRenderer.invoke('font:export', payload) as Promise<string | null>,
+  importRawFont: () => ipcRenderer.invoke('font:importBinary') as Promise<BinaryFileResult | null>,
   importMapping: () => ipcRenderer.invoke('mapping:import') as Promise<FileResult | null>,
   exportMapping: (text) => ipcRenderer.invoke('mapping:export', text) as Promise<string | null>,
   askUnsaved: (name) => ipcRenderer.invoke('dialog:unsaved', name) as Promise<UnsavedChoice>,
@@ -26,7 +28,9 @@ const api: EditorApi = {
   },
   onViewState: (handler) => {
     ipcRenderer.on('view:state', (_event, state: ViewState) => handler(state))
-  }
+  },
+  syncColumnGuideVisibility: (leftColumn, rightColumn) =>
+    ipcRenderer.send('view:syncColumnGuides', leftColumn, rightColumn)
 }
 
 contextBridge.exposeInMainWorld('api', api)
