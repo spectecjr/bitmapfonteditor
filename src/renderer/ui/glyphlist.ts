@@ -18,6 +18,8 @@ export interface GlyphListCallbacks {
   onSelect(code: number): void
   /** Shift-click: pin this glyph as the ghost drawn behind the current one. */
   onToggleReference(code: number): void
+  /** Double-click on the codepoint number: open the remapping dialog for that row. */
+  onEditMapping(code: number): void
 }
 
 /**
@@ -42,6 +44,17 @@ export class GlyphListView {
       if (event.shiftKey) this.callbacks.onToggleReference(code)
       else this.callbacks.onSelect(code)
     })
+
+    // Double-clicking the number specifically (not the thumbnail or char) opens
+    // the remapping dialog — the preceding pair of clicks already selects the
+    // row, which is a reasonable side effect rather than something to suppress.
+    container.addEventListener('dblclick', (event) => {
+      const target = (event.target as HTMLElement).closest<HTMLElement>('.glyph-code')
+      if (!target) return
+      const row = target.closest<HTMLElement>('.glyph-row')
+      if (!row) return
+      this.callbacks.onEditMapping(Number(row.dataset['code']))
+    })
   }
 
   /** Full rebuild — used whenever the set of codepoints or the geometry changes. */
@@ -54,11 +67,19 @@ export class GlyphListView {
       const element = document.createElement('div')
       element.className = 'glyph-row'
       element.dataset['code'] = String(code)
-      element.title = 'Click to edit · Shift-click to use as a reference'
+      element.title = 'Click to edit · Shift-click to use as a reference · double-click the number to remap'
 
-      const label = document.createElement('span')
+      // Hex on top, decimal centred below — both full brightness, not dimmed,
+      // so the codepoint reads as clearly as the glyph itself.
+      const label = document.createElement('div')
       label.className = 'glyph-code'
-      label.textContent = code.toString(16).toUpperCase().padStart(2, '0')
+      const hex = document.createElement('span')
+      hex.className = 'glyph-code-hex'
+      hex.textContent = code.toString(16).toUpperCase().padStart(2, '0')
+      const dec = document.createElement('span')
+      dec.className = 'glyph-code-dec'
+      dec.textContent = String(code)
+      label.append(hex, dec)
 
       const canvas = document.createElement('canvas')
       canvas.className = 'glyph-thumb'

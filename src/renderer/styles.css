@@ -166,7 +166,9 @@ main {
 
 .glyph-row {
   display: grid;
-  grid-template-columns: 26px 44px 1fr;
+  /* The code column grows past its 30px minimum for codepoints above 0xFFFF,
+     which need more than two hex digits to show in full. */
+  grid-template-columns: minmax(30px, auto) 44px 1fr;
   align-items: center;
   gap: 8px;
   padding: 3px 6px;
@@ -193,10 +195,26 @@ main {
   border-color: var(--ghost);
 }
 
+/* Hex on top, decimal centred below — both full brightness (not dimmed), so
+   the codepoint reads as clearly as the glyph itself. */
 .glyph-code {
-  color: var(--text-dim);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
   font-family: Consolas, 'Cascadia Mono', monospace;
+}
+
+.glyph-code-hex {
+  color: var(--text);
   font-size: 12px;
+  line-height: 1.2;
+}
+
+.glyph-code-dec {
+  color: var(--text);
+  font-size: 9px;
+  line-height: 1.2;
 }
 
 .glyph-thumb {
@@ -246,6 +264,7 @@ main {
 #preview-canvas {
   display: block;
   border: 1px solid var(--line);
+  cursor: pointer;
 }
 
 .app-dialog {
@@ -316,6 +335,20 @@ main {
 }
 
 .dialog-field.dialog-checkbox input {
+  width: auto;
+}
+
+/* Radio + label row above each text box in the mapping dialog — the radio just
+   records which field is authoritative, so it reads left-to-right like a
+   checkbox rather than the usual label-above-input stack. */
+.dialog-radio-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.dialog-radio-row input {
   width: auto;
 }
 

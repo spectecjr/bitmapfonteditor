@@ -2,6 +2,8 @@ import { join } from 'node:path'
 import { app, BrowserWindow, shell } from 'electron'
 import { buildMenu, pushViewState } from './menu'
 import { registerIpc } from './ipc'
+import { closePreviewWindow, registerPreviewWindowIpc } from './previewWindow'
+import { pruneMissingRecentFiles } from './settings'
 
 let mainWindow: BrowserWindow | null = null
 /** Mirrored from the renderer so the close handler knows whether to prompt. */
@@ -43,6 +45,7 @@ function createWindow(): void {
 
   window.on('closed', () => {
     mainWindow = null
+    closePreviewWindow()
   })
 
   window.webContents.setWindowOpenHandler(({ url }) => {
@@ -70,6 +73,7 @@ void app.whenReady().then(() => {
       closeApproved = true
     }
   })
+  registerPreviewWindowIpc()
   buildMenu(getWindow)
   createWindow()
 
@@ -80,4 +84,8 @@ void app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+app.on('before-quit', () => {
+  pruneMissingRecentFiles()
 })

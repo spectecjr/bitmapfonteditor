@@ -9,11 +9,18 @@ import {
 } from '@shared/types'
 import { getBit } from '../model/glyph'
 
+/**
+ * Plain drag: only the selected glyph. Shift-drag: every glyph set to the same
+ * absolute width. Ctrl+Shift-drag: every glyph adjusted by the same delta from
+ * wherever it started (`value` is that delta, not an absolute width).
+ */
+export type WidthDragMode = 'single' | 'wholeAbsolute' | 'wholeRelative'
+
 export interface MatrixCallbacks {
   /** Fired once at the start of a drag, before anything is mutated. */
   beginEdit(): void
   setPixel(x: number, y: number, value: boolean): void
-  setWidth(width: number): void
+  setWidth(value: number, mode: WidthDragMode): void
   setGuide(guide: GuideName, position: number): void
   /** Fired once when the drag ends. */
   endEdit(): void
@@ -79,6 +86,9 @@ export class MatrixView {
   private mode: DragMode = 'none'
   private paintValue = false
   private lastCell = { x: -1, y: -1 }
+  private widthDragMode: WidthDragMode = 'single'
+  /** The selected glyph's width when a width drag started — the baseline a relative drag adjusts from. */
+  private widthDragStart = 0
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -361,6 +371,12 @@ export class MatrixView {
 
     if (this.hitsWidthMarker(point)) {
       this.mode = 'width'
+      this.widthDragStart = this.glyph.width
+      this.widthDragMode = event.shiftKey
+        ? event.ctrlKey
+          ? 'wholeRelative'
+          : 'wholeAbsolute'
+        : 'single'
       this.callbacks.beginEdit()
       this.applyWidth(point.x)
       return
@@ -423,7 +439,12 @@ export class MatrixView {
   private applyWidth(px: number): void {
     if (!this.doc) return
     const snapped = Math.round((px - this.originX) / this.cell)
-    this.callbacks.setWidth(Math.max(0, Math.min(this.doc.width, snapped)))
+    const clamped = Math.max(0, Math.min(this.doc.width, snapped))
+    if (this.widthDragMode === 'wholeRelative') {
+      this.callbacks.setWidth(clamped - this.widthDragStart, 'wholeRelative')
+    } else {
+      this.callbacks.setWidth(clamped, this.widthDragMode)
+    }
   }
 
   private applyGuide(guide: GuideName, point: { x: number; y: number }): void {

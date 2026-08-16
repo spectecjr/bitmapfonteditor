@@ -1,4 +1,4 @@
-import type { FontDoc, Glyph } from '@shared/types'
+import { MAX_CODEPOINT, type FontDoc, type Glyph } from '@shared/types'
 import { bytesPerLine, definedCodepoints } from '../model/font'
 import { maskRowToWidth } from '../model/glyph'
 
@@ -125,8 +125,8 @@ export function parseMapping(text: string): Record<number, string> {
   const codepage: Record<number, string> = {}
   for (const entry of file.entries) {
     const code = entry?.code
-    if (!Number.isInteger(code) || code < 0 || code > 255) {
-      throw new Error(`entry code ${String(code)} is not a codepoint in 0..255`)
+    if (!Number.isInteger(code) || code < 0 || code > MAX_CODEPOINT) {
+      throw new Error(`entry code ${String(code)} is not a codepoint in 0..${MAX_CODEPOINT}`)
     }
     const char =
       typeof entry.char === 'string' && entry.char.length > 0

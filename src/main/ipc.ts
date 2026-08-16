@@ -3,7 +3,8 @@ import { basename, dirname, extname, join } from 'node:path'
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import type { BinaryFileResult, ExportPayload, FileResult, UnsavedChoice } from '@shared/api'
 import { suggestFileName } from './fileNaming'
-import { syncColumnGuides } from './menu'
+import { buildMenu, syncColumnGuides, togglePreviewInverted } from './menu'
+import { addRecentFile, removeRecentFile } from './settings'
 
 interface IpcContext {
   getWindow: () => BrowserWindow | null
@@ -39,7 +40,31 @@ export function registerIpc({ getWindow, setDirty, approveClose }: IpcContext): 
     })
     if (result.canceled || result.filePaths.length === 0) return null
     const path = result.filePaths[0]!
-    return { path, text: await readFile(path, 'utf8') }
+    const text = await readFile(path, 'utf8')
+    addRecentFile(path)
+    return { path, text }
+  })
+
+  ipcMain.handle('project:openPath', async (_event, path: string): Promise<FileResult | null> => {
+    try {
+      const text = await readFile(path, 'utf8')
+      addRecentFile(path)
+      return { path, text }
+    } catch {
+      const window = getWindow()
+      removeRecentFile(path)
+      buildMenu(getWindow)
+      if (window) {
+        await dialog.showMessageBox(window, {
+          type: 'error',
+          buttons: ['OK'],
+          title: 'Font Editor',
+          message: 'That file could no longer be found.',
+          detail: `${path}\n\nIt has been removed from the Recent Files list.`
+        })
+      }
+      return null
+    }
   })
 
   ipcMain.handle(
@@ -61,6 +86,7 @@ export function registerIpc({ getWindow, setDirty, approveClose }: IpcContext): 
         path = result.filePath
       }
       await writeFile(path, text, 'utf8')
+      addRecentFile(path)
       return path
     }
   )
@@ -172,5 +198,9 @@ export function registerIpc({ getWindow, setDirty, approveClose }: IpcContext): 
 
   ipcMain.on('view:syncColumnGuides', (_event, leftColumn: boolean, rightColumn: boolean) => {
     syncColumnGuides(getWindow, leftColumn, rightColumn)
+  })
+
+  ipcMain.on('view:togglePreviewInverted', () => {
+    togglePreviewInverted(getWindow)
   })
 }

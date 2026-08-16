@@ -15,8 +15,10 @@ import {
   isFixedWidth,
   populateFromCodepage,
   removeCodepoint,
+  renumberCodepoints,
   resizeFont,
-  resizeLosesData
+  resizeLosesData,
+  trimCodepointRange
 } from '../src/renderer/model/font'
 import { setBit } from '../src/renderer/model/glyph'
 
@@ -43,6 +45,35 @@ describe('codepoint set', () => {
 
     removeCodepoint(doc, 65)
     expect(definedCodepoints(doc)).toEqual([32, 200])
+  })
+
+  it('trimCodepointRange discards glyphs outside the inclusive range, leaving the codepage alone', () => {
+    const doc = createFont(8, 8)
+    addCodepoint(doc, 32)
+    addCodepoint(doc, 65)
+    addCodepoint(doc, 200)
+    doc.codepage = { 32: ' ', 65: 'A', 200: 'È' }
+
+    trimCodepointRange(doc, 40, 100)
+    expect(definedCodepoints(doc)).toEqual([65])
+    expect(doc.codepage).toEqual({ 32: ' ', 65: 'A', 200: 'È' })
+  })
+
+  it('renumberCodepoints closes gaps into a contiguous run, moving glyphs and mapping together', () => {
+    const doc = createFont(8, 8)
+    addCodepoint(doc, 5)
+    addCodepoint(doc, 10)
+    addCodepoint(doc, 20)
+    setBit(doc.glyphs[10]!, 8, 0, 0, true)
+    doc.codepage = { 5: 'A', 20: 'B' } // 10 deliberately left unmapped
+
+    renumberCodepoints(doc, 100)
+
+    expect(definedCodepoints(doc)).toEqual([100, 101, 102])
+    expect(doc.glyphs[101]!.rows[0]).toBe(0x80) // the glyph that used to be at 10
+    expect(doc.codepage).toEqual({ 100: 'A', 102: 'B' })
+    expect(doc.glyphs[5]).toBeUndefined()
+    expect(doc.codepage[20]).toBeUndefined()
   })
 
   it('keeps existing artwork when populating from a codepage', () => {
@@ -185,9 +216,23 @@ describe('buildFont', () => {
     expect(definedCodepoints(doc)).toEqual([65, 66, 67])
   })
 
-  it('clips the range to 0..255', () => {
+  it('allows a range past the old 255 ceiling', () => {
     const doc = buildFont({ width: 8, height: 8, firstCodepoint: 253, lastCodepoint: 258, codepage: {} })
-    expect(definedCodepoints(doc)).toEqual([253, 254, 255])
+    expect(definedCodepoints(doc)).toEqual([253, 254, 255, 256, 257, 258])
+  })
+
+  it('clips the range at 0 and the highest valid Unicode codepoint', () => {
+    const doc = buildFont({ width: 8, height: 8, firstCodepoint: -5, lastCodepoint: 2, codepage: {} })
+    expect(definedCodepoints(doc)).toEqual([0, 1, 2])
+
+    const atCeiling = buildFont({
+      width: 8,
+      height: 8,
+      firstCodepoint: 0x10fffe,
+      lastCodepoint: 0x110000,
+      codepage: {}
+    })
+    expect(definedCodepoints(atCeiling)).toEqual([0x10fffe, 0x10ffff])
   })
 
   it('carries the codepage and metadata through', () => {

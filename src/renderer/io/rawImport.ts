@@ -1,4 +1,4 @@
-import { MAX_BYTES_PER_LINE, MAX_FONT_HEIGHT, type Glyph } from '@shared/types'
+import { MAX_BYTES_PER_LINE, MAX_CODEPOINT, MAX_FONT_HEIGHT, type Glyph } from '@shared/types'
 
 /**
  * Reading a raw font dump — the reverse of io/export.ts, but for a file this
@@ -30,9 +30,9 @@ export interface ImportEstimate {
   charCount: number
   /** Bytes left over after the last whole character — 0 if the file divides evenly. */
   remainderBytes: number
-  /** Codepoint the last imported character would land on, before clipping to 0-255. */
+  /** Codepoint the last imported character would land on, before clipping to MAX_CODEPOINT. */
   lastCodepoint: number
-  /** How many characters would land past codepoint 255 and get dropped. */
+  /** How many characters would land past MAX_CODEPOINT and get dropped. */
   overflow: number
 }
 
@@ -54,7 +54,13 @@ export function estimateImport(
   const charCount = fileSize > 0 ? Math.ceil(fileSize / bytesPerChar) : 0
   const remainderBytes = fileSize > 0 ? fileSize % bytesPerChar : 0
   const lastCodepoint = options.startCode + charCount - 1
-  return { bytesPerChar, charCount, remainderBytes, lastCodepoint, overflow: Math.max(0, lastCodepoint - 255) }
+  return {
+    bytesPerChar,
+    charCount,
+    remainderBytes,
+    lastCodepoint,
+    overflow: Math.max(0, lastCodepoint - MAX_CODEPOINT)
+  }
 }
 
 export interface ImportedGlyph {
@@ -65,11 +71,11 @@ export interface ImportedGlyph {
 export interface ImportResult {
   width: number
   height: number
-  /** Only codepoints 0-255, in ascending order. */
+  /** Only codepoints up to MAX_CODEPOINT, in ascending order. */
   glyphs: ImportedGlyph[]
-  /** Total characters found in the file, before the 0-255 clip. */
+  /** Total characters found in the file, before the MAX_CODEPOINT clip. */
   charCount: number
-  /** Characters that would have landed past codepoint 255 and were dropped. */
+  /** Characters that would have landed past MAX_CODEPOINT and were dropped. */
   droppedOverflow: number
   /** True if the file size wasn't an exact multiple of one character's bytes. */
   paddedWithZeroes: boolean
@@ -82,7 +88,7 @@ function readByte(bytes: Uint8Array, index: number): number {
 export function importRawFont(bytes: Uint8Array, options: ImportFontOptions): ImportResult {
   const bytesPerLine = clampBytesPerLine(options.bytesPerLine)
   const linesPerChar = clampLinesPerChar(options.linesPerChar)
-  const startCode = Math.min(255, Math.max(0, Math.round(options.startCode)))
+  const startCode = Math.min(MAX_CODEPOINT, Math.max(0, Math.round(options.startCode)))
   const bytesPerChar = bytesPerLine * linesPerChar
   const width = bytesPerLine * 8
 
@@ -94,7 +100,7 @@ export function importRawFont(bytes: Uint8Array, options: ImportFontOptions): Im
 
   for (let index = 0; index < charCount; index++) {
     const code = startCode + index
-    if (code > 255) {
+    if (code > MAX_CODEPOINT) {
       droppedOverflow++
       continue
     }

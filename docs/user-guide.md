@@ -33,9 +33,15 @@ it says how far the cursor moves after drawing this character, which is usually
 narrower than the cell. A fixed-width font is simply one where every glyph's
 advance equals the cell width.
 
-**Codepoints** are the slots 0–255 that make up the font. A font does not have to
-define all of them — it is entirely up to you whether to include codes below 32 or
-above 128. Glyphs are exported in ascending codepoint order.
+**Codepoints** are the slots that make up the font — any integer from 0 up to
+0x10FFFF, the highest valid Unicode codepoint. A font does not have to define
+all of them, or even a contiguous run: it is entirely up to you whether to
+include codes below 32, above 127, or scattered far beyond the old
+extended-ASCII range. Glyphs are exported in ascending codepoint order.
+
+Wherever a codepoint is shown, it reads as decimal with hex alongside — `65
+(0x41)` in text, or hex on top and decimal below in the character map. Wherever
+you type one in, decimal (`65`) and hex (`0x41` or `$41`) both work.
 
 **The character mapping** records which Unicode character each codepoint stands
 for. It exists so the character map can show you a recognisable `A` next to slot
@@ -70,6 +76,16 @@ Whole-glyph operations live under **Edit**: clear, invert, flip horizontally or
 vertically, and shift up/down/left/right. Shifting does not wrap — pixels pushed
 past an edge are gone, and the vacated row or column comes back blank.
 
+**Edit ▸ Whole Font** applies the same clear/invert/flip/shift operations to
+every defined glyph at once, using separate shortcuts from the single-glyph
+versions so the two families never collide. It is still one undo step for the
+whole font, not one per glyph.
+
+**Edit ▸ Swap With Reference Glyph** (`Ctrl+Shift+X`) exchanges the entire
+glyph — bitmap and advance width both — between the current selection and its
+pinned [reference glyph](#reference-glyphs). Handy for fixing a font where two
+slots were drawn in the wrong place.
+
 **Copy Glyph** and **Paste Glyph** move artwork between slots: select a
 codepoint, `Ctrl+C`, select another, `Ctrl+V`. If you resize the cell between
 copying and pasting, the pixels are re-aligned rather than smeared.
@@ -94,6 +110,12 @@ without ever losing the artwork behind it.
 
 Fitting a **blank** glyph leaves its advance alone — otherwise the space
 character would collapse to nothing.
+
+**Shift-drag** the marker to set every glyph in the font to the *same* advance
+width at once. **Ctrl+Shift-drag** instead applies a *relative* adjustment —
+however far you drag, every glyph's advance moves by that same amount, clamped
+to the cell — previewing live in the character map as you drag, and only
+committing as one undo step once you release.
 
 ## Guidelines
 
@@ -134,8 +156,13 @@ unsaved changes, the same as any other property of the font.
 ## The character map
 
 The panel on the right lists every defined codepoint in ascending order, showing
-the hex code, a thumbnail of the glyph as drawn, and the character it maps to
-rendered in the system font. Click a row to edit that glyph.
+the codepoint (hex on top, decimal below), a thumbnail of the glyph as drawn,
+and the character it maps to rendered in the system font. Click a row to edit
+that glyph.
+
+**Double-click the codepoint number** to open the same remapping dialog as
+**Helpers ▸ Edit Mapping for Glyph…**, for that row specifically rather than
+whatever is currently selected.
 
 It reflows into as many columns as it has room for — **drag the divider** on its
 left edge to widen it and it will go to two, three or more columns.
@@ -164,13 +191,32 @@ codepoint.
 
 The text box under the grid is editable — type anything and the strip below
 redraws using the live font at 1×, 2× and 4×, honouring each glyph's advance
-width. It defaults to a pangram so you can see most of the alphabet at once.
+width. It defaults to a pangram, with every other visible ASCII character
+(punctuation, digits, the rest of the uppercase alphabet) appended after the
+numbers, so a fresh font exercises the whole printable set at a glance.
 
 Characters with no glyph, or with no mapping, appear as a hollow box, which makes
 gaps in the font obvious at a glance.
 
 **View ▸ Preview: Black on White** flips it from white-on-black to black-on-white,
-for checking how the font reads as normal body text.
+for checking how the font reads as normal body text. **Clicking the preview
+strip itself** does the same thing — the menu tick stays in sync either way.
+
+### Magnified Preview window
+
+**View ▸ Magnified Preview…** (`Ctrl+Shift+P`) opens the font in its own
+resizable window, magnified. Buttons in its toolbar choose the zoom (1×, 2× or
+4×), the pixel shape — **Square** for normal pixels, or **Half-width** for
+fonts designed against non-square hardware pixels — and **Wrap**, which wraps
+the text at the window edge when on, or lets it run past the edge on one line
+when off. All three choices, and the window's size, are remembered the next
+time you open it.
+
+Its own text box starts as a copy of the main window's preview text, captured
+the moment the window opens — after that the two are independent, so you can
+type something different in the magnified window without disturbing the main
+preview. The window has no menu of its own beyond **Window ▸ Close**, and it
+closes automatically if the main window does.
 
 ## Codepoints and character mapping
 
@@ -178,8 +224,25 @@ for checking how the font reads as normal body text.
 accepts decimal (`65`), hex (`0x41` or `$41`), or the character itself (`A`). If
 the codepoint already exists it just selects it.
 
+**Font ▸ Add Codepoint Before** / **After** (`Ctrl+[` / `Ctrl+]`) are a
+dialog-free shortcut for the common case: they add and select the codepoint
+immediately below or above the current selection, skipping the dialog
+entirely. Like Add Codepoint, landing on a slot that already exists just
+selects it rather than complaining.
+
 **Font ▸ Remove Codepoint** (`Ctrl+Shift+D`) deletes the selected slot and its
 artwork, after a confirmation.
+
+**Font ▸ Renumber Codepoints…** asks for a starting codepoint, then reassigns
+every defined codepoint to a contiguous run from there, in the same relative
+order, closing any gaps — glyph 5 and glyph 20 in a font with nothing between
+them become adjacent codepoints if you renumber it. Character mappings travel
+with their glyphs. Refused if the new range would run past 0x10FFFF, the
+highest valid codepoint.
+
+**Font ▸ Trim to Codepoint Range…** deletes every glyph *outside* a min/max
+range you give it, after a confirmation naming how many glyphs would go. The
+character mapping is untouched either way — only the glyphs disappear.
 
 **Helpers ▸ Populate CP437 Table** defines all 256 codepoints in one go and loads
 the matching mapping. Existing artwork is kept. Two variants:
@@ -188,10 +251,20 @@ the matching mapping. Existing artwork is kept. Two variants:
   (U+00A9) at 0x7F instead of the house glyph. This is the default for a new font.
 - **stock** — unmodified CP437.
 
+**Helpers ▸ Populate ASCII 32-127** does the same for just the printable ASCII
+range instead of the full 256-codepoint table — useful for a font that has no
+business defining the 0-31 control range or the 128-255 high half at all. Also
+two variants: **SAM Coupe** (the same substitutions as above, restricted to
+32-127) and **standard** (plain ASCII, with 0x7F mapped to the literal DEL
+character).
+
 **Helpers ▸ Edit Mapping for Glyph…** changes which character the selected
-codepoint displays as. **Import Mapping…** and **Export Mapping…** move the whole
-table in and out as a `.map.json` file, so a font and a character set can be
-recombined freely.
+codepoint displays as. The dialog accepts the character itself, or its Unicode
+codepoint as decimal or hex (`0x20AC` for `€`) — a radio button records which
+one you mean, and typing in either field selects its own radio automatically,
+so you can switch back and forth before confirming. **Import Mapping…** and
+**Export Mapping…** move the whole table in and out as a `.map.json` file, so a
+font and a character set can be recombined freely.
 
 ## Font dimensions
 
@@ -259,8 +332,10 @@ dump — a ROM extract, another tool's output, anything that isn't already a
 A note above the buttons shows the resulting character count live, and warns if
 the file's size isn't an exact multiple of one character (the short last
 character is padded with zeroes, not dropped) or if the codepoint range runs
-past 255 (those characters are dropped). If the imported geometry differs from
-the current cell, you get the same "this will discard pixels" warning as
+past 0x10FFFF, the highest valid codepoint (those characters are dropped — only
+relevant for a very large file starting near that ceiling). If the imported
+geometry differs from the current cell, you get the same "this will discard
+pixels" warning as
 resizing normally would, and the whole import lands as one undo step.
 
 ## Filling from a system font
@@ -314,6 +389,12 @@ suggests a filename generated from it, with anything your OS doesn't allow in a
 filename swapped for an underscore. Every save after that just reuses the
 file's actual name, the same as before.
 
+**File ▸ Recent Files** lists fonts you've opened or saved lately — pick one to
+load it directly, skipping the file picker. Entries whose file has since been
+moved or deleted quietly drop off the list next time it's rebuilt (opening the
+app, or after new/open/save/undo/redo); if one is ever clicked before that
+cleanup catches it, you'll get a message saying so instead of an error.
+
 **Export** (`File ▸ Export Font…`, `Ctrl+E`) is one-way and writes three files
 from one base name you choose:
 
@@ -363,8 +444,10 @@ node scripts/decode-font.mjs font.bin font.widths.json --code 0x41
 | --- | --- |
 | New Font… | `Ctrl+N` |
 | Open Font… | `Ctrl+O` |
+| Recent Files | — (submenu) |
 | Save Font | `Ctrl+S` |
 | Save Font As… | `Ctrl+Shift+S` |
+| Import Raw Font Bitmap… | — |
 | Export Font… | `Ctrl+E` |
 | Exit | `Alt+F4` |
 
@@ -378,6 +461,11 @@ node scripts/decode-font.mjs font.bin font.widths.json --code 0x41
 | Invert Glyph | `Ctrl+I` |
 | Flip Horizontal / Vertical | `Ctrl+H` / `Ctrl+Shift+H` |
 | Shift Up / Down / Left / Right | `Alt+↑ ↓ ← →` |
+| Swap With Reference Glyph | `Ctrl+Shift+X` |
+| Whole Font ▸ Clear | `Ctrl+Alt+C` |
+| Whole Font ▸ Invert | `Ctrl+Alt+I` |
+| Whole Font ▸ Flip Horizontal / Vertical | `Ctrl+Alt+H` / `Ctrl+Alt+Shift+H` |
+| Whole Font ▸ Shift Up / Down / Left / Right | `Ctrl+Shift+↑ ↓ ← →` |
 
 ### Font
 
@@ -386,7 +474,10 @@ node scripts/decode-font.mjs font.bin font.widths.json --code 0x41
 | Dimensions… | `Ctrl+D` |
 | Guidelines… | `Ctrl+G` |
 | Add Codepoint… | `Ctrl+Shift+A` |
+| Add Codepoint Before / After | `Ctrl+[` / `Ctrl+]` |
 | Remove Codepoint | `Ctrl+Shift+D` |
+| Renumber Codepoints… | — |
+| Trim to Codepoint Range… | — |
 | Fit Width to Ink (1px gap) | `Ctrl+T` |
 | Fit Width to Ink (tight) | `Ctrl+Shift+T` |
 | Reset Width to Maximum | — |
@@ -394,16 +485,18 @@ node scripts/decode-font.mjs font.bin font.widths.json --code 0x41
 
 ### Helpers
 
-Populate CP437 Table (SAM Coupe), Populate CP437 Table (stock), Edit Mapping for
-Glyph…, Import Mapping…, Export Mapping…, Import Raw Font Bitmap… — none have
-shortcuts. Fill From System Font… is
-[currently disabled](#filling-from-a-system-font) and does not appear here.
+Populate CP437 Table (SAM Coupe), Populate CP437 Table (stock), Populate ASCII
+32-127 (SAM Coupe), Populate ASCII 32-127 (standard), Edit Mapping for Glyph…,
+Import Mapping…, Export Mapping… — none have shortcuts. Fill From System
+Font… is [currently disabled](#filling-from-a-system-font) and does not appear
+here.
 
 ### View
 
 Show/hide ticks for each of the five guides, the black-on-white preview tick,
-Previous Glyph (`Ctrl+Up`), Next Glyph (`Ctrl+Down`), Clear Reference Glyph, plus
-the standard reload, developer tools, zoom and full-screen items.
+**Magnified Preview…** (`Ctrl+Shift+P`), Previous Glyph (`Ctrl+Up`), Next Glyph
+(`Ctrl+Down`), Clear Reference Glyph, plus the standard reload, developer
+tools, zoom and full-screen items.
 
 ## Keyboard reference
 
@@ -411,10 +504,14 @@ the standard reload, developer tools, zoom and full-screen items.
 | --- | --- |
 | Drag on grid | Paint or erase, direction set by the first pixel |
 | Drag red marker | Advance width |
+| Shift-drag red marker | Advance width, applied to every glyph |
+| Ctrl+Shift-drag red marker | Advance width, relative adjustment applied to every glyph |
 | Drag margin handles | Guides |
 | Drag divider | Resize the character map |
 | Click map row | Select glyph |
 | Shift-click map row | Toggle reference glyph |
+| Double-click map row's codepoint | Open the remapping dialog for that glyph |
+| Click the preview strip | Toggle black/white background |
 
 `Ctrl+C`, `Ctrl+V`, `Ctrl+Z`, `Ctrl+Y` and `Ctrl+Delete` act on the **glyph** when
 the grid has focus, and on the **text** when the caret is in the preview box or a

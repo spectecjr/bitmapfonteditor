@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { MAX_CODEPOINT } from '../src/shared/types'
 import { estimateImport, importRawFont } from '../src/renderer/io/rawImport'
 
 describe('estimateImport', () => {
@@ -14,11 +15,12 @@ describe('estimateImport', () => {
     expect(est.remainderBytes).toBe(4)
   })
 
-  it('reports overflow once the range runs past codepoint 255', () => {
-    const est = estimateImport(8 * 200, { startCode: 200, linesPerChar: 8, bytesPerLine: 1 })
+  it('reports overflow once the range runs past the highest valid codepoint', () => {
+    const startCode = MAX_CODEPOINT - 99
+    const est = estimateImport(8 * 200, { startCode, linesPerChar: 8, bytesPerLine: 1 })
     expect(est.charCount).toBe(200)
-    expect(est.lastCodepoint).toBe(399)
-    expect(est.overflow).toBe(144) // codepoints 256..399
+    expect(est.lastCodepoint).toBe(MAX_CODEPOINT + 100)
+    expect(est.overflow).toBe(100) // 100 characters land past MAX_CODEPOINT
   })
 
   it('is zero characters for an empty file', () => {
@@ -71,10 +73,11 @@ describe('importRawFont — row layout', () => {
     expect(result.paddedWithZeroes).toBe(false)
   })
 
-  it('drops characters that would land past codepoint 255', () => {
+  it('drops characters that would land past the highest valid codepoint', () => {
     const bytes = new Uint8Array(8 * 3)
-    const result = importRawFont(bytes, { startCode: 254, linesPerChar: 8, bytesPerLine: 1, layout: 'row' })
-    expect(result.glyphs.map((g) => g.code)).toEqual([254, 255])
+    const startCode = MAX_CODEPOINT - 1
+    const result = importRawFont(bytes, { startCode, linesPerChar: 8, bytesPerLine: 1, layout: 'row' })
+    expect(result.glyphs.map((g) => g.code)).toEqual([MAX_CODEPOINT - 1, MAX_CODEPOINT])
     expect(result.droppedOverflow).toBe(1)
   })
 })

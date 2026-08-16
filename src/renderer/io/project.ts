@@ -1,5 +1,5 @@
 import type { FontDoc, FontMetadata, Glyph } from '@shared/types'
-import { MAX_FONT_HEIGHT, MAX_FONT_WIDTH } from '@shared/types'
+import { MAX_CODEPOINT, MAX_FONT_HEIGHT, MAX_FONT_WIDTH } from '@shared/types'
 import {
   bytesPerLine,
   createDefaultMetadata,
@@ -151,7 +151,7 @@ export function parseProject(text: string): FontDoc {
   const mask = widthMask(width)
   const glyphs: Record<number, Glyph> = {}
   for (const entry of file.glyphs) {
-    const code = readInt(entry?.code, 'glyph code', 0, 255)
+    const code = readInt(entry?.code, 'glyph code', 0, MAX_CODEPOINT)
     const glyphWidth = readInt(entry?.width, `glyph ${code} width`, 0, width)
     if (!Array.isArray(entry?.rows)) fail(`glyph ${code} is missing its rows array`)
     if (entry.rows.length !== height) {
@@ -171,8 +171,8 @@ export function parseProject(text: string): FontDoc {
     if (typeof file.codepage !== 'object') fail('codepage must be an object')
     for (const [key, char] of Object.entries(file.codepage)) {
       const code = Number(key)
-      if (!Number.isInteger(code) || code < 0 || code > 255) {
-        fail(`codepage key ${key} is not a codepoint in 0..255`)
+      if (!Number.isInteger(code) || code < 0 || code > MAX_CODEPOINT) {
+        fail(`codepage key ${key} is not a codepoint in 0..${MAX_CODEPOINT}`)
       }
       if (typeof char !== 'string') fail(`codepage entry ${key} must be a string`)
       codepage[code] = char

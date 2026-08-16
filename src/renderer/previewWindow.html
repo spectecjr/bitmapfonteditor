@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://localhost:* http://localhost:*"
+    />
+    <title>Magnified Preview</title>
+  </head>
+  <body>
+    <div id="preview-app">
+      <header id="preview-toolbar">
+        <span class="preview-toolbar-group">
+          <button type="button" data-zoom="1">1x</button>
+          <button type="button" data-zoom="2">2x</button>
+          <button type="button" data-zoom="4">4x</button>
+        </span>
+        <span class="preview-toolbar-group">
+          <button type="button" data-aspect="square">Square</button>
+          <button type="button" data-aspect="half">Half-width</button>
+        </span>
+        <span class="preview-toolbar-group">
+          <button type="button" id="wrap-toggle">Wrap</button>
+        </span>
+      </header>
+      <div id="preview-textbar">
+        <input id="preview-text-input" type="text" spellcheck="false" />
+      </div>
+      <div id="preview-host">
+        <canvas id="preview-canvas"></canvas>
+      </div>
+    </div>
+    <script type="module" src="./previewWindow.ts"></script>
+  </body>
+</html>

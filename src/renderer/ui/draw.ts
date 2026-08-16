@@ -2,10 +2,32 @@ import type { Glyph } from '@shared/types'
 import { getBit } from '../model/glyph'
 
 /**
- * Blits a glyph at `scale` using the context's current fillStyle.
- * `limitToAdvance` mirrors the export behaviour (pixels past the width marker
- * are dropped), which is what the thumbnails and preview want to show.
+ * Blits a glyph with independent horizontal/vertical pixel scale, using the
+ * context's current fillStyle. `limitToAdvance` mirrors the export behaviour
+ * (pixels past the width marker are dropped), which is what the thumbnails
+ * and preview want to show.
  */
+export function drawGlyphScaled(
+  ctx: CanvasRenderingContext2D,
+  glyph: Glyph,
+  fontWidth: number,
+  x0: number,
+  y0: number,
+  scaleX: number,
+  scaleY: number,
+  limitToAdvance = true
+): void {
+  const columns = limitToAdvance ? Math.min(glyph.width, fontWidth) : fontWidth
+  for (let y = 0; y < glyph.rows.length; y++) {
+    for (let x = 0; x < columns; x++) {
+      if (getBit(glyph, fontWidth, x, y)) {
+        ctx.fillRect(x0 + x * scaleX, y0 + y * scaleY, scaleX, scaleY)
+      }
+    }
+  }
+}
+
+/** Square-pixel convenience wrapper around `drawGlyphScaled`. */
 export function drawGlyph(
   ctx: CanvasRenderingContext2D,
   glyph: Glyph,
@@ -15,14 +37,7 @@ export function drawGlyph(
   scale: number,
   limitToAdvance = true
 ): void {
-  const columns = limitToAdvance ? Math.min(glyph.width, fontWidth) : fontWidth
-  for (let y = 0; y < glyph.rows.length; y++) {
-    for (let x = 0; x < columns; x++) {
-      if (getBit(glyph, fontWidth, x, y)) {
-        ctx.fillRect(x0 + x * scale, y0 + y * scale, scale, scale)
-      }
-    }
-  }
+  drawGlyphScaled(ctx, glyph, fontWidth, x0, y0, scale, scale, limitToAdvance)
 }
 
 export interface OverflowColors {

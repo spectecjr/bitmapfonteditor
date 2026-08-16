@@ -2,6 +2,7 @@ import {
   DEFAULT_FONT_HEIGHT,
   DEFAULT_FONT_WIDTH,
   MAX_BYTES_PER_LINE,
+  MAX_CODEPOINT,
   MAX_FONT_HEIGHT,
   MAX_FONT_WIDTH,
   MIN_FONT_HEIGHT,
@@ -140,6 +141,34 @@ export function removeCodepoint(doc: FontDoc, code: number): void {
   delete doc.glyphs[code]
 }
 
+/**
+ * Reassigns every defined codepoint to a contiguous run starting at `start`,
+ * in ascending order — closing any gaps. Glyphs and their character mapping
+ * move together; the codepage is rebuilt from scratch rather than left
+ * partially stale, since old entries at the vacated addresses would otherwise
+ * describe whatever ends up there next.
+ */
+export function renumberCodepoints(doc: FontDoc, start: number): void {
+  const codes = definedCodepoints(doc)
+  const glyphs: Record<number, Glyph> = {}
+  const codepage: Record<number, string> = {}
+  codes.forEach((oldCode, index) => {
+    const newCode = start + index
+    glyphs[newCode] = doc.glyphs[oldCode]!
+    const char = doc.codepage[oldCode]
+    if (char !== undefined) codepage[newCode] = char
+  })
+  doc.glyphs = glyphs
+  doc.codepage = codepage
+}
+
+/** Discards every glyph outside [min, max] inclusive. The codepage is left untouched, matching removeCodepoint. */
+export function trimCodepointRange(doc: FontDoc, min: number, max: number): void {
+  for (const code of definedCodepoints(doc)) {
+    if (code < min || code > max) delete doc.glyphs[code]
+  }
+}
+
 /** True when the requested dimensions would discard set pixels. */
 export function resizeLosesData(doc: FontDoc, width: number, height: number): boolean {
   const dropped = doc.width - width
@@ -212,8 +241,8 @@ export interface FontCreationOptions {
  */
 export function buildFont(options: FontCreationOptions): FontDoc {
   const doc = createFont(options.width, options.height, options.codepage, options.metadata)
-  const lo = Math.max(0, Math.min(255, Math.min(options.firstCodepoint, options.lastCodepoint)))
-  const hi = Math.max(0, Math.min(255, Math.max(options.firstCodepoint, options.lastCodepoint)))
+  const lo = Math.max(0, Math.min(MAX_CODEPOINT, Math.min(options.firstCodepoint, options.lastCodepoint)))
+  const hi = Math.max(0, Math.min(MAX_CODEPOINT, Math.max(options.firstCodepoint, options.lastCodepoint)))
   for (let code = lo; code <= hi; code++) addCodepoint(doc, code)
   return doc
 }

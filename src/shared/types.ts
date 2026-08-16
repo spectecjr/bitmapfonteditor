@@ -7,6 +7,9 @@ export const DEFAULT_FONT_WIDTH = 8
 export const DEFAULT_FONT_HEIGHT = 8
 export const MAX_BYTES_PER_LINE = 4
 
+/** A font's codepoints (glyph slots) may be any valid Unicode scalar value. */
+export const MAX_CODEPOINT = 0x10ffff
+
 /**
  * A single character cell.
  *
@@ -67,7 +70,7 @@ export interface FontMetadata {
   modified: string | null
 }
 
-/** The whole editable document. `glyphs` is sparse: any of codepoints 0-255 may be absent. */
+/** The whole editable document. `glyphs` is sparse: any codepoint up to `MAX_CODEPOINT` may be absent. */
 export interface FontDoc {
   version: 1
   /** Cell width in pixels, 1..32. Drives bytes-per-line for the exported bitmap. */

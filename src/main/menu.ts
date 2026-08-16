@@ -1,8 +1,11 @@
 import { app, BrowserWindow, Menu, shell, type MenuItemConstructorOptions } from 'electron'
 import type { ViewState } from '@shared/api'
 import type { HorizontalGuide, VerticalGuide } from '@shared/types'
+import { basename } from 'node:path'
 import { openDocsWindow } from './docsWindow'
 import { sampleFontsDir } from './paths'
+import { openPreviewWindow } from './previewWindow'
+import { getRecentFiles, pruneMissingRecentFiles } from './settings'
 
 /**
  * View preferences live here rather than in the renderer: the menu ticks are the
@@ -40,6 +43,13 @@ export function pushViewState(window: BrowserWindow | null): void {
  * times the checkboxes could disagree with the document without a click having
  * happened to keep them in sync.
  */
+/** Flips the preview background, whether triggered by the View menu checkbox or a click on the preview itself. */
+export function togglePreviewInverted(getWindow: () => BrowserWindow | null): void {
+  viewState.previewInverted = !viewState.previewInverted
+  pushViewState(getWindow())
+  buildMenu(getWindow)
+}
+
 export function syncColumnGuides(
   getWindow: () => BrowserWindow | null,
   leftColumn: boolean,
@@ -55,6 +65,24 @@ export function syncColumnGuides(
  */
 function send(getWindow: () => BrowserWindow | null, command: string): () => void {
   return () => getWindow()?.webContents.send('menu:command', command)
+}
+
+/**
+ * Pruning here (rather than on a dedicated "menu about to open" event, which
+ * the native application menu doesn't expose cross-platform) piggybacks on
+ * the fact that `buildMenu` already reruns on every state change that could
+ * make this list stale — new/open/save/undo/redo — so it stays cheap and
+ * never runs on a hot path like typing or painting. `before-quit` in
+ * main/index.ts covers the "on app close" half of the spec.
+ */
+function buildRecentFilesSubmenu(getWindow: () => BrowserWindow | null): MenuItemConstructorOptions[] {
+  pruneMissingRecentFiles()
+  const files = getRecentFiles()
+  if (files.length === 0) return [{ label: 'No Recent Files', enabled: false }]
+  return files.map((path) => ({
+    label: `${basename(path)} — ${path}`,
+    click: () => getWindow()?.webContents.send('menu:openRecent', path)
+  }))
 }
 
 export function buildMenu(getWindow: () => BrowserWindow | null): void {
@@ -106,11 +134,14 @@ export function buildMenu(getWindow: () => BrowserWindow | null): void {
       label: '&File',
       submenu: [
         { label: 'New Font', accelerator: 'CmdOrCtrl+N', click: cmd('file:new') },
+        { type: 'separator' },
         { label: 'Open Font…', accelerator: 'CmdOrCtrl+O', click: cmd('file:open') },
+        { label: 'Recent Files', submenu: buildRecentFilesSubmenu(getWindow) },
         { type: 'separator' },
         { label: 'Save Font', accelerator: 'CmdOrCtrl+S', click: cmd('file:save') },
         { label: 'Save Font As…', accelerator: 'CmdOrCtrl+Shift+S', click: cmd('file:saveAs') },
         { type: 'separator' },
+        { label: 'Import Raw Font Bitmap…', click: cmd('helpers:importRawFont') },
         { label: 'Export Font…', accelerator: 'CmdOrCtrl+E', click: cmd('file:export') },
         { type: 'separator' },
         { label: 'Exit', accelerator: 'Alt+F4', click: () => getWindow()?.close() }
@@ -137,7 +168,52 @@ export function buildMenu(getWindow: () => BrowserWindow | null): void {
         { label: 'Shift Up', accelerator: 'Alt+Up', click: cmd('edit:shiftUp') },
         { label: 'Shift Down', accelerator: 'Alt+Down', click: cmd('edit:shiftDown') },
         { label: 'Shift Left', accelerator: 'Alt+Left', click: cmd('edit:shiftLeft') },
-        { label: 'Shift Right', accelerator: 'Alt+Right', click: cmd('edit:shiftRight') }
+        { label: 'Shift Right', accelerator: 'Alt+Right', click: cmd('edit:shiftRight') },
+        { type: 'separator' },
+        {
+          label: 'Swap With Reference Glyph',
+          accelerator: 'CmdOrCtrl+Shift+X',
+          click: cmd('edit:swapReference')
+        },
+        { type: 'separator' },
+        {
+          label: 'Whole Font',
+          submenu: [
+            { label: 'Clear', accelerator: 'CmdOrCtrl+Alt+C', click: cmd('edit:whole:clear') },
+            { label: 'Invert', accelerator: 'CmdOrCtrl+Alt+I', click: cmd('edit:whole:invert') },
+            {
+              label: 'Flip Horizontal',
+              accelerator: 'CmdOrCtrl+Alt+H',
+              click: cmd('edit:whole:flipH')
+            },
+            {
+              label: 'Flip Vertical',
+              accelerator: 'CmdOrCtrl+Alt+Shift+H',
+              click: cmd('edit:whole:flipV')
+            },
+            { type: 'separator' },
+            {
+              label: 'Shift Up',
+              accelerator: 'CmdOrCtrl+Shift+Up',
+              click: cmd('edit:whole:shiftUp')
+            },
+            {
+              label: 'Shift Down',
+              accelerator: 'CmdOrCtrl+Shift+Down',
+              click: cmd('edit:whole:shiftDown')
+            },
+            {
+              label: 'Shift Left',
+              accelerator: 'CmdOrCtrl+Shift+Left',
+              click: cmd('edit:whole:shiftLeft')
+            },
+            {
+              label: 'Shift Right',
+              accelerator: 'CmdOrCtrl+Shift+Right',
+              click: cmd('edit:whole:shiftRight')
+            }
+          ]
+        }
       ]
     },
     {
@@ -147,7 +223,11 @@ export function buildMenu(getWindow: () => BrowserWindow | null): void {
         { label: 'Guidelines…', accelerator: 'CmdOrCtrl+G', click: cmd('font:guidelines') },
         { type: 'separator' },
         { label: 'Add Codepoint…', accelerator: 'CmdOrCtrl+Shift+A', click: cmd('font:add') },
+        { label: 'Add Codepoint Before', accelerator: 'CmdOrCtrl+[', click: cmd('font:addBefore') },
+        { label: 'Add Codepoint After', accelerator: 'CmdOrCtrl+]', click: cmd('font:addAfter') },
         { label: 'Remove Codepoint', accelerator: 'CmdOrCtrl+Shift+D', click: cmd('font:remove') },
+        { label: 'Renumber Codepoints…', click: cmd('font:renumber') },
+        { label: 'Trim to Codepoint Range…', click: cmd('font:trimRange') },
         { type: 'separator' },
         {
           label: 'Fit Width to Ink (1px gap)',
@@ -170,11 +250,12 @@ export function buildMenu(getWindow: () => BrowserWindow | null): void {
         { label: 'Populate CP437 Table (SAM Coupe)', click: cmd('helpers:cp437Sam') },
         { label: 'Populate CP437 Table (stock)', click: cmd('helpers:cp437') },
         { type: 'separator' },
+        { label: 'Populate ASCII 32-127 (SAM Coupe)', click: cmd('helpers:asciiSam') },
+        { label: 'Populate ASCII 32-127 (standard)', click: cmd('helpers:ascii') },
+        { type: 'separator' },
         { label: 'Edit Mapping for Glyph…', click: cmd('helpers:editMapping') },
         { label: 'Import Mapping…', click: cmd('helpers:importMapping') },
         { label: 'Export Mapping…', click: cmd('helpers:exportMapping') },
-        { type: 'separator' },
-        { label: 'Import Raw Font Bitmap…', click: cmd('helpers:importRawFont') }
         // 'Fill From System Font…' (helpers:fillSystemFont) is disabled for now —
         // Canvas 2D has no access to a font's TrueType hinting, so glyphs
         // rasterised straight from an installed font look rougher than a proper
@@ -201,6 +282,12 @@ export function buildMenu(getWindow: () => BrowserWindow | null): void {
             viewState.previewInverted = item.checked
             pushViewState(getWindow())
           }
+        },
+        { type: 'separator' },
+        {
+          label: 'Magnified Preview…',
+          accelerator: 'CmdOrCtrl+Shift+P',
+          click: () => openPreviewWindow(getWindow())
         },
         { type: 'separator' },
         { label: 'Previous Glyph', accelerator: 'CmdOrCtrl+Up', click: cmd('view:prev') },

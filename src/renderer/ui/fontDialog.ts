@@ -1,16 +1,12 @@
 import { MAX_BYTES_PER_LINE, MAX_FONT_HEIGHT, type FontDoc } from '@shared/types'
-import { buildCp437Sam } from '../model/codepage'
+import { buildCp437Sam, formatCodepoint } from '../model/codepage'
 import { bytesPerLine, buildFont, definedCodepoints, isFixedWidth } from '../model/font'
 import { exportBitmap } from '../io/export'
-import { showForm } from './dialogs'
+import { parseCodepoint, showForm } from './dialogs'
 
 export interface LoadMappingResult {
   path: string
   codepage: Record<number, string>
-}
-
-function hex2(code: number): string {
-  return code.toString(16).toUpperCase().padStart(2, '0')
 }
 
 /**
@@ -33,13 +29,15 @@ export async function showNewFontDialog(
   const describeRange = (values: Record<string, string>): string => {
     const bytesWide = Math.min(MAX_BYTES_PER_LINE, Math.max(1, Math.round(Number(values['bytesPerLine']) || 1)))
     const height = Math.min(MAX_FONT_HEIGHT, Math.max(1, Math.round(Number(values['heightLines']) || 1)))
-    const a = Math.min(255, Math.max(0, Math.round(Number(values['firstCodepoint']) || 0)))
-    const b = Math.min(255, Math.max(0, Math.round(Number(values['lastCodepoint']) || 0)))
+    const a = parseCodepoint(values['firstCodepoint'] ?? '') ?? 0
+    const b = parseCodepoint(values['lastCodepoint'] ?? '') ?? 0
     const lo = Math.min(a, b)
     const hi = Math.max(a, b)
+    const count = hi - lo + 1
+    const warning = count > 10000 ? ` That's a lot of blank glyphs to create at once — this may take a moment.` : ''
     return (
       `Cell: ${bytesWide * 8} × ${height} px (${bytesWide} byte${bytesWide === 1 ? '' : 's'}/line). ` +
-      `Codepoints 0x${hex2(lo)}–0x${hex2(hi)} = ${hi - lo + 1} characters.`
+      `Codepoints ${formatCodepoint(lo)} to ${formatCodepoint(hi)} = ${count} characters.${warning}`
     )
   }
 
@@ -72,8 +70,18 @@ export async function showNewFontDialog(
         min: 1,
         max: MAX_FONT_HEIGHT
       },
-      { name: 'firstCodepoint', label: 'First codepoint', value: '32', type: 'number', min: 0, max: 255 },
-      { name: 'lastCodepoint', label: 'Last codepoint', value: '127', type: 'number', min: 0, max: 255 },
+      {
+        name: 'firstCodepoint',
+        label: 'First codepoint',
+        value: '32',
+        hint: 'Decimal (32) or hex (0x20).'
+      },
+      {
+        name: 'lastCodepoint',
+        label: 'Last codepoint',
+        value: '127',
+        hint: 'Decimal (127) or hex (0x7F).'
+      },
       {
         name: 'mapping',
         label: 'Codepoint mapping',
@@ -101,8 +109,8 @@ export async function showNewFontDialog(
   return buildFont({
     width: bytesWide * 8,
     height,
-    firstCodepoint: Math.round(Number(values['firstCodepoint'])),
-    lastCodepoint: Math.round(Number(values['lastCodepoint'])),
+    firstCodepoint: parseCodepoint(values['firstCodepoint'] ?? '') ?? 32,
+    lastCodepoint: parseCodepoint(values['lastCodepoint'] ?? '') ?? 127,
     codepage: loadedCodepage ?? buildCp437Sam(),
     metadata: {
       name: values['name'] ?? '',
@@ -137,7 +145,10 @@ export async function showFontPropertiesDialog(doc: FontDoc): Promise<FontProper
   const bpl = bytesPerLine(doc.width)
   // Exact by construction — the same function File ▸ Export Font… uses to write the .bin.
   const projectedBytes = exportBitmap(doc).length
-  const range = codes.length === 0 ? 'none' : `0x${hex2(codes[0]!)}–0x${hex2(codes[codes.length - 1]!)}`
+  const range =
+    codes.length === 0
+      ? 'none'
+      : `${formatCodepoint(codes[0]!)} to ${formatCodepoint(codes[codes.length - 1]!)}`
 
   const values = await showForm(
     'Font Properties',

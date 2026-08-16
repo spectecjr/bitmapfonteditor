@@ -13,14 +13,24 @@ export default defineConfig({
   preload: {
     resolve: { alias: { '@shared': shared } },
     build: {
-      rollupOptions: { input: resolve(__dirname, 'src/preload/index.ts') }
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'src/preload/index.ts'),
+          previewWindow: resolve(__dirname, 'src/preload/previewWindow.ts')
+        }
+      }
     }
   },
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
     resolve: { alias: { '@shared': shared } },
     build: {
-      rollupOptions: { input: resolve(__dirname, 'src/renderer/index.html') }
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'src/renderer/index.html'),
+          previewWindow: resolve(__dirname, 'src/renderer/previewWindow.html')
+        }
+      }
     }
   }
 })

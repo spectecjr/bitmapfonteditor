@@ -188,7 +188,18 @@ describe('project validation', () => {
     expect(() => parseProject(JSON.stringify(broken))).toThrow(/hex string/)
 
     const badCode = JSON.parse(valid)
-    badCode.glyphs[0].code = 300
+    badCode.glyphs[0].code = -1
     expect(() => parseProject(JSON.stringify(badCode))).toThrow(/glyph code/)
+
+    const overflowCode = JSON.parse(valid)
+    overflowCode.glyphs[0].code = 0x110000 // one past the highest valid Unicode codepoint
+    expect(() => parseProject(JSON.stringify(overflowCode))).toThrow(/glyph code/)
+  })
+
+  it('accepts codepoints above the old 255 ceiling', () => {
+    const broken = JSON.parse(valid)
+    broken.glyphs[0].code = 300
+    const restored = parseProject(JSON.stringify(broken))
+    expect(restored.glyphs[300]).toBeDefined()
   })
 })

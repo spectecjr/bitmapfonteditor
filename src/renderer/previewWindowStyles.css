@@ -1,0 +1,91 @@
+:root {
+  --bg: #17181b;
+  --panel: #212328;
+  --line: #34373e;
+  --text: #dfe1e6;
+  --accent: #e0533d;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font:
+    13px/1.4 'Segoe UI',
+    system-ui,
+    sans-serif;
+  user-select: none;
+}
+
+#preview-app {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  height: 100%;
+}
+
+#preview-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.preview-toolbar-group {
+  display: flex;
+  gap: 4px;
+}
+
+.preview-toolbar-group button {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 3px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.preview-toolbar-group button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+#preview-textbar {
+  padding: 6px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+#preview-text-input {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 4px 8px;
+  font: inherit;
+  user-select: text;
+}
+
+#preview-host {
+  min-height: 0;
+  min-width: 0;
+}
+
+#preview-canvas {
+  display: block;
+}

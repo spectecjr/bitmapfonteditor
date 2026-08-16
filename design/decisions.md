@@ -172,3 +172,128 @@ required judgment calls the spec didn't spell out.
   after every toggle, and main rebuilds the View menu's checkboxes from it —
   because Electron's native menu is main-process state, but the truth it now
   reflects lives in the renderer's document.
+
+## v0.1.3
+
+- **The reported "guides aren't part of undo/redo" bug did not reproduce.**
+  Before touching any code, this was tested directly against the running app
+  via CDP: a guide drag, a pixel paint, and a second guide drag, interleaved
+  and then undone step by step. The undo stack unwound in the exact expected
+  order (guide → paint → guide, each its own step) with no skipped or merged
+  states. No fix was made, since there was nothing reproducible to fix and a
+  speculative change risked introducing a real regression into working code.
+  If this resurfaces, get exact repro steps rather than assuming the
+  mechanism is broken.
+- **`formatCodepoint()` (`model/codepage.ts`) is now the one canonical
+  "`nnn (0xNN)`" display helper**, used everywhere a codepoint appears as text
+  (toolbar, dialogs, confirmations). The character map's sidebar thumbnails
+  are the deliberate exception: they show hex above decimal as two stacked
+  lines instead, per the spec's explicit layout for that one spot. Every
+  codepoint *entry* field that used to be an HTML `number` input (which
+  can't express `0x` syntax) was switched to a plain text field parsed by the
+  existing `parseCodepoint()`.
+- **Whole-font shortcuts were chosen to avoid two collision classes**:
+  OS-reserved combinations (`Ctrl+Alt+Delete` is untouchable, so whole-font
+  Clear uses `Ctrl+Alt+C` instead) and a known Intel-driver hotkey for display
+  rotation on `Ctrl+Alt+Arrow`, which ruled out mirroring the single-glyph
+  shift shortcuts (`Alt+Arrow`) with an added Ctrl. Whole-font shift instead
+  uses `Ctrl+Shift+Arrow`.
+- **Whole-font advance-width drag reuses the marker itself** rather than
+  adding new UI: Shift-drag applies one absolute width to every glyph,
+  Ctrl+Shift-drag applies a relative delta. The relative case captures each
+  glyph's width once, on the first move of a given drag
+  (`main.ts`'s `wholeWidthOriginal`), because `matrix.ts` reports the total
+  delta from drag start on every pointermove, not a per-move increment —
+  applying it against the live (already-adjusted) width instead of the
+  captured original would compound the change on every event.
+- **The Magnified Preview window is a second Vite renderer entry with its own
+  narrow preload** (`shared/previewApi.ts`, `preload/previewWindow.ts`,
+  `main/previewWindow.ts`), not a second `BrowserWindow` sharing the main
+  window's `EditorApi` — that surface exposes file-system and dialog
+  operations this window has no business calling. The current font and
+  preview text reach it by the main renderer pushing to main
+  (`pushPreviewData`/`preview:push`) whenever it repaints its own strip, and
+  main re-sending the last-pushed copy to the preview window on
+  `did-finish-load` so a freshly opened window doesn't start blank. Its zoom
+  and pixel-aspect choice, and its window size, persist via the new
+  `main/settings.ts` module rather than being re-derived, since there's
+  nothing in the document to derive them from.
+- **`main/settings.ts` is a hand-rolled synchronous JSON file** under
+  `app.getPath('userData')`, read once and cached, written on every change —
+  no dependency pulled in for this, matching the project's
+  zero-runtime-dependency stance. It holds both the preview window's
+  settings and the Recent Files list, since both are app-wide preferences
+  with no natural home in a `FontDoc`.
+- **Recent Files pruning happens inside `buildMenu()`** rather than on a
+  dedicated "menu about to open" event — Electron's native application menu
+  doesn't expose one cross-platform. `buildMenu()` already reruns on every
+  state change that could make the list stale (new/open/save/undo/redo), so
+  piggybacking on it is free and never runs on a hot path like typing or
+  painting. `before-quit` covers the spec's "on app close" case directly.
+  Filesystem watchers on each recent file (offered as a stretch goal in the
+  spec) were left out: the lazy prune-on-rebuild plus a graceful
+  message-box-and-removal if a stale entry is actually clicked already
+  covers the failure mode without extra moving parts.
+- **The Magnified Preview window got a follow-up round of changes** once the
+  user tried it against the running app: its own editable text box, seeded
+  once from the main window's preview text on open and independent after that
+  (`previewWindow.ts`'s `seededText` flag — later `preview:data` pushes update
+  the font but never overwrite what's been typed in this window); a menu
+  trimmed to just Window ▸ Close instead of duplicating the main menu; and a
+  `parent`/`modal: false` relationship to the main `BrowserWindow`, backed up
+  by an explicit `closePreviewWindow()` call from main's own `closed` handler
+  rather than trusting OS-level owned-window behavior alone to close it.
+- **The mapping dialog (`showMappingDialog` in `ui/dialogs.ts`) is a bespoke
+  dialog, not a `showForm()` field list** — the spec's auto-select-the-radio-
+  on-edit behavior needed direct cross-field wiring that the generic
+  `FormField` model has no reason to support elsewhere. It returns the raw
+  mode and both fields' text unvalidated (`MappingDialogResult`) rather than
+  resolving to a character itself, so validation and the error message stay
+  with the caller (`editMappingCommand`) — the same division of labor
+  `parseCodepoint` already has with every other codepoint-entry dialog.
+- **Two new Helpers items (`buildAscii`/`buildAsciiSam` in
+  `model/codepage.ts`) populate just codepoints 0x20-0x7F** rather than the
+  full 256-entry CP437 tables. `buildAsciiSam` slices the *existing*
+  `buildCp437Sam()` output down to that range instead of re-deriving it, so
+  the two can never drift apart.
+- **The default preview text is a plain string literal, not a computed
+  value** — it was originally built by a `withMissingAscii()` helper that
+  appended every visible ASCII character not already in the pangram, but the
+  user asked for the simpler, more obviously-correct-by-inspection version
+  once they saw what it produced. The helper and its tests were deleted
+  rather than left as unused code; the literal is byte-for-byte what the
+  helper used to generate, including the lowercase `s` in the appended tail —
+  the pangram only ever uses a capital `S`, so lowercase `s` genuinely wasn't
+  represented.
+- **Add Codepoint Before/After (`Ctrl+[`/`Ctrl+]`) and Renumber Codepoints…
+  both operate on `store.get().selected`** rather than taking an explicit
+  codepoint argument, matching how Remove Codepoint already works — there was
+  no ambiguity worth a dialog for "before/after *what*." Renumbering rebuilds
+  `doc.codepage` from scratch keyed to the new addresses
+  (`renumberCodepoints` in `model/font.ts`) rather than leaving old entries in
+  place, since an untouched codepage entry at a vacated address would
+  silently describe whatever glyph moves there next.
+- **Codepoints can now go up to `MAX_CODEPOINT` (0x10FFFF)**, not 255 — raised
+  at the user's request after confirming the exported `.bin`/`.widths.json`/
+  `.map.json` format has no structural byte-width assumption baked in; the
+  only things enforcing 255 were validation ceilings in `parseCodepoint`,
+  `buildFont`, `parseMapping`, `parseProject`'s `readInt` calls, and
+  `rawImport.ts`, all now reading from the one shared constant in
+  `shared/types.ts`. The New Font dialog's live note warns (but doesn't
+  block) once a requested range would create more than 10,000 blank glyphs
+  at once, since that's now reachable by mistake in a way it never was when
+  the whole codepoint space topped out at 256. The character map's codepoint
+  column width changed from a fixed 30px to `minmax(30px, auto)` so codepoints
+  needing more than two hex digits don't get clipped.
+- **This session's environment had two standing quirks worth knowing about
+  if picked up again**: `ELECTRON_RUN_AS_NODE` leaks in from the host Claude
+  Code process and breaks any Electron launch unless stripped
+  (`env -u ELECTRON_RUN_AS_NODE`), and OS-level keyboard focus delivery
+  (`SendKeys` after `AppActivate`) was unreliable for native-menu-only
+  commands for most of the session — reachable via CDP for anything backed by
+  a DOM element (clicks, the mapping dialog, the preview canvas), but not for
+  menu items or accelerators with no DOM equivalent. Several features in this
+  release (the ASCII helpers, Add Codepoint Before/After, Renumber
+  Codepoints, opening the Magnified Preview window) are verified by
+  typecheck/unit-test/code-review rather than a live click-through for that
+  reason.

@@ -1,4 +1,4 @@
-import type { HorizontalGuide } from './types'
+import type { FontDoc, HorizontalGuide } from './types'
 
 /**
  * View preferences. These live in the main process because the menu checkboxes
@@ -38,6 +38,8 @@ export type UnsavedChoice = 'save' | 'discard' | 'cancel'
 
 export interface EditorApi {
   openProject(): Promise<FileResult | null>
+  /** Opens a specific path directly, bypassing the file picker — used by the Recent Files menu. */
+  openProjectPath(path: string): Promise<FileResult | null>
   /**
    * Returns the path written, or null if the user cancelled. `fontName`, if
    * given, only ever seeds the save dialog's suggested filename on the very
@@ -64,6 +66,8 @@ export interface EditorApi {
   forceClose(): void
   onCommand(handler: (command: string) => void): void
   onViewState(handler: (state: ViewState) => void): void
+  /** File ▸ Recent Files ▸ (some entry) was clicked — main sends the path directly, not through onCommand. */
+  onOpenRecent(handler: (path: string) => void): void
   /**
    * Rebuilds the View menu's column-guide checkboxes to match the current
    * document — needed because that visibility now lives on the FontDoc, which
@@ -71,6 +75,10 @@ export interface EditorApi {
    * of the menu.
    */
   syncColumnGuideVisibility(leftColumn: boolean, rightColumn: boolean): void
+  /** Clicking the preview strip toggles the same setting as the View menu checkbox. */
+  togglePreviewInverted(): void
+  /** Relays the current font and preview text to the Magnified Preview window, if one is open. */
+  pushPreviewData(doc: FontDoc, text: string): void
 }
 
 declare global {

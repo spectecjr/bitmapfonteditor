@@ -2,6 +2,7 @@ import {
   DEFAULT_FONT_HEIGHT,
   DEFAULT_FONT_WIDTH,
   HORIZONTAL_GUIDES,
+  MAX_CODEPOINT,
   MAX_FONT_HEIGHT,
   MAX_FONT_WIDTH,
   VERTICAL_GUIDES,
@@ -12,7 +13,16 @@ import {
 } from '@shared/types'
 
 const GUIDE_NAMES: readonly GuideName[] = [...HORIZONTAL_GUIDES, ...VERTICAL_GUIDES]
-import { buildCp437, buildCp437Sam, displayChar } from './model/codepage'
+const INVALID_CODEPOINT_MESSAGE = `That is not a codepoint in the range 0–0x${MAX_CODEPOINT.toString(16).toUpperCase()}.`
+import type { FileResult } from '@shared/api'
+import {
+  buildAscii,
+  buildAsciiSam,
+  buildCp437,
+  buildCp437Sam,
+  displayChar,
+  formatCodepoint
+} from './model/codepage'
 import {
   addCodepoint,
   buildFont,
@@ -23,8 +33,10 @@ import {
   definedCodepoints,
   populateFromCodepage,
   removeCodepoint,
+  renumberCodepoints,
   resizeFont,
-  resizeLosesData
+  resizeLosesData,
+  trimCodepointRange
 } from './model/font'
 import {
   clearGlyph,
@@ -43,7 +55,14 @@ import { clampBytesPerLine, clampLinesPerChar, estimateImport, importRawFont } f
 import { History } from './state/history'
 import { shortcutFor } from './state/shortcuts'
 import { Store } from './state/store'
-import { parseCodepoint, showConfirm, showForm, showMessage } from './ui/dialogs'
+import {
+  parseCodepoint,
+  parseUnicodeCodepoint,
+  showConfirm,
+  showForm,
+  showMappingDialog,
+  showMessage
+} from './ui/dialogs'
 import { showFontPropertiesDialog, showNewFontDialog, type LoadMappingResult } from './ui/fontDialog'
 import { GlyphListView } from './ui/glyphlist'
 import { MatrixView } from './ui/matrix'
@@ -76,7 +95,11 @@ const store = new Store({
   projectPath: null,
   dirty: false,
   clipboard: null,
-  previewText: 'Sphinx of black quartz, judge my vow. 0123456789'
+  // The pangram plus every other visible ASCII character not already in it
+  // (digits, punctuation, the rest of the uppercase alphabet), appended after
+  // the numbers, so a fresh font's preview exercises the whole printable set.
+  previewText:
+    "Sphinx of black quartz, judge my vow. 0123456789 !\"#$%&'()*+-/:;<=>?@ABCDEFGHIJKLMNOPQRTUVWXYZ[\\]^_`s{|}~"
 })
 const history = new History()
 
@@ -86,6 +109,14 @@ const glyphInfo = $('glyph-info')
 const statusLine = $('status')
 const previewInput = $<HTMLInputElement>('preview-text')
 
+/**
+ * Each affected glyph's width when the current Ctrl+Shift (whole-font
+ * relative) width drag started — captured lazily on the drag's first
+ * `setWidth` call, since `matrix.ts` reports a running delta from drag start
+ * on every move, not a per-move increment. Cleared once the drag ends.
+ */
+let wholeWidthOriginal: Record<number, number> | null = null
+
 const matrix = new MatrixView($<HTMLCanvasElement>('matrix'), {
   beginEdit: () => history.begin(store.doc),
   setPixel: (x, y, value) => {
@@ -94,11 +125,29 @@ const matrix = new MatrixView($<HTMLCanvasElement>('matrix'), {
     setBit(glyph, store.doc.width, x, y, value)
     matrix.render()
   },
-  setWidth: (width) => {
-    const glyph = store.glyph
-    if (!glyph) return
-    glyph.width = width
+  setWidth: (value, mode) => {
+    const doc = store.doc
+    if (mode === 'single') {
+      const glyph = store.glyph
+      if (!glyph) return
+      glyph.width = value
+      matrix.render()
+      updateInfo()
+      return
+    }
+    if (mode === 'wholeAbsolute') {
+      for (const glyph of Object.values(doc.glyphs)) glyph.width = value
+    } else {
+      wholeWidthOriginal ??= Object.fromEntries(
+        Object.entries(doc.glyphs).map(([code, glyph]) => [Number(code), glyph.width])
+      )
+      for (const [code, glyph] of Object.entries(doc.glyphs)) {
+        const original = wholeWidthOriginal[Number(code)] ?? glyph.width
+        glyph.width = Math.max(0, Math.min(doc.width, original + value))
+      }
+    }
     matrix.render()
+    refreshAllThumbnails()
     updateInfo()
   },
   setGuide: (guide, position) => {
@@ -107,6 +156,7 @@ const matrix = new MatrixView($<HTMLCanvasElement>('matrix'), {
     updateInfo()
   },
   endEdit: () => {
+    wholeWidthOriginal = null
     if (!history.commit(store.doc)) return
     markDirty()
     refresh()
@@ -115,9 +165,21 @@ const matrix = new MatrixView($<HTMLCanvasElement>('matrix'), {
 
 const glyphList = new GlyphListView($('glyph-list'), {
   onSelect: (code) => selectCodepoint(code),
-  onToggleReference: (code) => toggleReference(code)
+  onToggleReference: (code) => toggleReference(code),
+  onEditMapping: (code) => void editMappingCommand(code)
 })
 const preview = new PreviewView($<HTMLCanvasElement>('preview-canvas'))
+// Clicking the preview strip toggles the same black/white background as the
+// View menu checkbox — main owns the setting, so this just asks it to flip.
+$<HTMLCanvasElement>('preview-canvas').addEventListener('click', () => {
+  window.api.togglePreviewInverted()
+})
+
+/** Renders the in-app preview strip and relays the same data to the Magnified Preview window, if open. */
+function renderPreview(doc: FontDoc, text: string): void {
+  preview.render(doc, text)
+  window.api.pushPreviewData(doc, text)
+}
 
 // --- rendering -------------------------------------------------------------
 
@@ -161,7 +223,7 @@ function refresh(structure = false): void {
     glyphList.setSelected(state.selected)
     glyphList.setReference(state.reference)
   }
-  preview.render(state.doc, state.previewText)
+  renderPreview(state.doc, state.previewText)
   updateInfo()
 }
 
@@ -181,17 +243,16 @@ function updateInfo(): void {
     glyphInfo.textContent = 'No glyph selected'
     statusLine.textContent = 'Use Font ▸ Add Codepoint… to start a glyph.'
   } else {
-    const hex = selected.toString(16).toUpperCase().padStart(2, '0')
     glyphInfo.textContent =
-      `0x${hex} (${selected})  ${displayChar(doc.codepage[selected])}  ` +
+      `${formatCodepoint(selected)}  ${displayChar(doc.codepage[selected])}  ` +
       `· advance ${glyph.width}/${doc.width} px`
     const ghost = reference
     statusLine.textContent =
-      'Drag to paint · drag the red marker for advance width · drag the margin handles for guides · ' +
+      'Drag to paint · drag the red marker for advance width ' +
+      '(Shift = whole font, Ctrl+Shift = whole font relative) · drag the margin handles for guides · ' +
       (ghost === null || ghost === selected
         ? 'shift-click a glyph in the map to show it as a reference.'
-        : `reference: 0x${ghost.toString(16).toUpperCase().padStart(2, '0')} ` +
-          `(shift-click it again to clear).`)
+        : `reference: ${formatCodepoint(ghost)} (shift-click it again to clear).`)
   }
   updateTitle()
 }
@@ -239,6 +300,25 @@ function editDoc(fn: (doc: FontDoc) => void, structure = true): void {
   refresh(structure)
 }
 
+/** Repaints every thumbnail's artwork without touching the sidebar's DOM structure. */
+function refreshAllThumbnails(): void {
+  const doc = store.doc
+  for (const code of definedCodepoints(doc)) glyphList.updateGlyph(doc, code)
+}
+
+/** Edit ▸ Whole Font: applies a per-glyph transform to every defined glyph as one undo step. */
+function editWholeFont(fn: (glyph: Glyph, doc: FontDoc) => void): void {
+  const doc = store.doc
+  if (definedCodepoints(doc).length === 0) return
+  history.record(doc)
+  for (const glyph of Object.values(doc.glyphs)) fn(glyph, doc)
+  markDirty()
+  matrix.setGlyph(doc, store.glyph, store.referenceGlyph)
+  refreshAllThumbnails()
+  renderPreview(doc, store.get().previewText)
+  updateInfo()
+}
+
 function selectCodepoint(code: number): void {
   store.get().selected = code
   refresh()
@@ -249,6 +329,20 @@ function toggleReference(code: number): void {
   const state = store.get()
   state.reference = state.reference === code ? null : code
   refresh()
+}
+
+/** Swaps the whole glyph (bitmap and advance width) between the selection and its pinned reference. */
+function swapWithReference(): void {
+  const state = store.get()
+  const { selected, reference } = state
+  if (selected === null || reference === null || selected === reference) return
+  const a = state.doc.glyphs[selected]
+  const b = state.doc.glyphs[reference]
+  if (!a || !b) return
+  editDoc((doc) => {
+    doc.glyphs[selected] = b
+    doc.glyphs[reference] = a
+  })
 }
 
 function stepSelection(delta: number): void {
@@ -270,8 +364,7 @@ function copyGlyph(): void {
     fontWidth: store.doc.width
   }
   // Copying changes nothing on screen, so say so or it looks like a dead key.
-  const hex = state.selected.toString(16).toUpperCase().padStart(2, '0')
-  statusLine.textContent = `Copied glyph 0x${hex} — select another codepoint and press Ctrl+V to paste.`
+  statusLine.textContent = `Copied glyph ${formatCodepoint(state.selected)} — select another codepoint and press Ctrl+V to paste.`
 }
 
 function pasteGlyph(): void {
@@ -368,20 +461,36 @@ async function newFont(): Promise<void> {
   refresh(true)
 }
 
+function loadProjectFile(file: FileResult): void {
+  const doc = parseProject(file.text)
+  const state = store.get()
+  state.doc = doc
+  state.selected = definedCodepoints(doc)[0] ?? null
+  state.reference = null
+  state.projectPath = file.path
+  history.clear()
+  markDirty(false)
+  refresh(true)
+}
+
 async function openProject(): Promise<void> {
   if (!(await confirmDiscard())) return
   const file = await window.api.openProject()
   if (!file) return
   try {
-    const doc = parseProject(file.text)
-    const state = store.get()
-    state.doc = doc
-    state.selected = definedCodepoints(doc)[0] ?? null
-    state.reference = null
-    state.projectPath = file.path
-    history.clear()
-    markDirty(false)
-    refresh(true)
+    loadProjectFile(file)
+  } catch (error) {
+    await window.api.error('Could not open that font.', (error as Error).message)
+  }
+}
+
+/** File ▸ Recent Files: reads a specific path directly, bypassing the picker. */
+async function openRecentFile(path: string): Promise<void> {
+  if (!(await confirmDiscard())) return
+  const file = await window.api.openProjectPath(path)
+  if (!file) return
+  try {
+    loadProjectFile(file)
   } catch (error) {
     await window.api.error('Could not open that font.', (error as Error).message)
   }
@@ -534,7 +643,7 @@ async function addCodepointCommand(): Promise<void> {
   if (!values) return
   const code = parseCodepoint(values['code'] ?? '')
   if (code === null) {
-    await window.api.error('That is not a codepoint in the range 0–255.')
+    await window.api.error(INVALID_CODEPOINT_MESSAGE)
     return
   }
   if (store.doc.glyphs[code]) {
@@ -545,13 +654,24 @@ async function addCodepointCommand(): Promise<void> {
   selectCodepoint(code)
 }
 
+/** Font ▸ Add Codepoint Before/After: a quick, dialog-free neighbour of the selection. */
+function addAdjacentCodepoint(direction: 1 | -1): void {
+  const selected = store.get().selected
+  if (selected === null) return
+  const target = selected + direction
+  if (target < 0 || target > MAX_CODEPOINT) return
+  if (!store.doc.glyphs[target]) {
+    editDoc((doc) => addCodepoint(doc, target))
+  }
+  selectCodepoint(target)
+}
+
 async function removeCodepointCommand(): Promise<void> {
   const selected = store.get().selected
   if (selected === null) return
-  const hex = selected.toString(16).toUpperCase().padStart(2, '0')
   const ok = await showConfirm(
     'Remove Codepoint',
-    `Remove 0x${hex} and its artwork from the font?`,
+    `Remove ${formatCodepoint(selected)} and its artwork from the font?`,
     'Remove'
   )
   if (!ok) return
@@ -566,36 +686,128 @@ async function removeCodepointCommand(): Promise<void> {
   refresh(true)
 }
 
-async function editMappingCommand(): Promise<void> {
-  const selected = store.get().selected
-  if (selected === null) return
-  const hex = selected.toString(16).toUpperCase().padStart(2, '0')
-  const values = await showForm(`Mapping for 0x${hex}`, [
+async function trimCodepointRangeCommand(): Promise<void> {
+  const values = await showForm('Trim to Codepoint Range', [
     {
-      name: 'char',
-      label: 'Character',
-      value: store.doc.codepage[selected] ?? '',
-      hint: 'The Unicode character this codepoint represents. Display only — never exported in the bitmap.'
+      name: 'min',
+      label: 'Minimum codepoint',
+      value: '0',
+      hint: 'Decimal (32) or hex (0x20). Codepoints below this are discarded.'
+    },
+    {
+      name: 'max',
+      label: 'Maximum codepoint',
+      value: String(MAX_CODEPOINT),
+      hint: 'Decimal or hex (0xNN). Codepoints above this are discarded.'
     }
   ])
   if (!values) return
-  const char = values['char'] ?? ''
+  const min = parseCodepoint(values['min'] ?? '')
+  const max = parseCodepoint(values['max'] ?? '')
+  if (min === null || max === null) {
+    await window.api.error(INVALID_CODEPOINT_MESSAGE)
+    return
+  }
+  const lo = Math.min(min, max)
+  const hi = Math.max(min, max)
+  const discarded = definedCodepoints(store.doc).filter((code) => code < lo || code > hi).length
+  if (discarded === 0) return
+
+  const ok = await showConfirm(
+    'Trim to Codepoint Range',
+    `Discard ${discarded} glyph${discarded === 1 ? '' : 's'} outside ${formatCodepoint(lo)} to ${formatCodepoint(hi)}?`,
+    'Discard'
+  )
+  if (!ok) return
+
+  editDoc((doc) => trimCodepointRange(doc, lo, hi))
+  const remaining = definedCodepoints(store.doc)
+  const state = store.get()
+  if (state.selected !== null && !remaining.includes(state.selected)) {
+    state.selected = remaining[0] ?? null
+  }
+  if (state.reference !== null && !remaining.includes(state.reference)) {
+    state.reference = null
+  }
+  refresh(true)
+}
+
+async function renumberCodepointsCommand(): Promise<void> {
+  const codes = definedCodepoints(store.doc)
+  if (codes.length === 0) return
+  const maxStart = MAX_CODEPOINT - (codes.length - 1)
+
+  const values = await showForm('Renumber Codepoints', [
+    {
+      name: 'start',
+      label: 'Starting codepoint',
+      value: String(codes[0]),
+      hint:
+        `Decimal or hex (0xNN). ${codes.length} defined glyph${codes.length === 1 ? '' : 's'} ` +
+        `will be renumbered in order, one codepoint apart, closing any gaps.`
+    }
+  ])
+  if (!values) return
+  const start = parseCodepoint(values['start'] ?? '')
+  if (start === null) {
+    await window.api.error(INVALID_CODEPOINT_MESSAGE)
+    return
+  }
+  if (start > maxStart) {
+    await window.api.error(
+      `Renumbering ${codes.length} glyphs starting at ${formatCodepoint(start)} would run past the highest ` +
+        `valid codepoint, ${formatCodepoint(MAX_CODEPOINT)}.`,
+      `Choose a starting value of ${formatCodepoint(maxStart)} or lower.`
+    )
+    return
+  }
+
+  const oldToNew = new Map(codes.map((code, index) => [code, start + index]))
+  const state = store.get()
+  const newSelected = state.selected === null ? null : (oldToNew.get(state.selected) ?? null)
+  const newReference = state.reference === null ? null : (oldToNew.get(state.reference) ?? null)
+
+  editDoc((doc) => renumberCodepoints(doc, start))
+  state.selected = newSelected
+  state.reference = newReference
+  refresh(true)
+}
+
+/** Also reachable by double-clicking a codepoint number in the character map, for any row — not just the selection. */
+async function editMappingCommand(code?: number): Promise<void> {
+  const target = code ?? store.get().selected
+  if (target === null) return
+  if (code !== undefined && code !== store.get().selected) selectCodepoint(code)
+  const result = await showMappingDialog(`Mapping for ${formatCodepoint(target)}`, store.doc.codepage[target] ?? '')
+  if (!result) return
+
+  let char: string
+  if (result.mode === 'code') {
+    const text = result.code.trim()
+    if (!text) {
+      char = ''
+    } else {
+      const codePoint = parseUnicodeCodepoint(text)
+      if (codePoint === null) {
+        await window.api.error('That is not a valid Unicode codepoint — use decimal (8364) or hex (0x20AC).')
+        return
+      }
+      char = String.fromCodePoint(codePoint)
+    }
+  } else {
+    char = result.char.length > 0 ? [...result.char][0]! : ''
+  }
+
   editDoc((doc) => {
-    if (char) doc.codepage[selected] = char
-    else delete doc.codepage[selected]
+    if (char) doc.codepage[target] = char
+    else delete doc.codepage[target]
   })
 }
 
-async function populateCp437(sam: boolean): Promise<void> {
-  const ok = await showConfirm(
-    'Populate CP437',
-    sam
-      ? 'Define all 256 CP437 codepoints (SAM Coupe variant: £ at 0x60, © at 0x7F). Existing artwork is kept.'
-      : 'Define all 256 stock CP437 codepoints. Existing artwork is kept.',
-    'Populate'
-  )
+async function populateCodepage(message: string, codepage: Record<number, string>): Promise<void> {
+  const ok = await showConfirm('Populate Codepoints', message, 'Populate')
   if (!ok) return
-  editDoc((doc) => populateFromCodepage(doc, sam ? buildCp437Sam() : buildCp437()))
+  editDoc((doc) => populateFromCodepage(doc, codepage))
   if (store.get().selected === null) store.get().selected = definedCodepoints(store.doc)[0] ?? null
   refresh(true)
 }
@@ -625,7 +837,12 @@ async function importRawFontCommand(): Promise<void> {
   const values = await showForm(
     'Import Raw Font Bitmap',
     [
-      { name: 'startCode', label: 'Start codepoint', value: '32', type: 'number', min: 0, max: 255 },
+      {
+        name: 'startCode',
+        label: 'Start codepoint',
+        value: '32',
+        hint: 'Decimal (32) or hex (0x20).'
+      },
       {
         name: 'linesPerChar',
         label: 'Lines per character',
@@ -657,7 +874,7 @@ async function importRawFontCommand(): Promise<void> {
     {
       okLabel: 'Import',
       onChange: (values) => {
-        const startCode = Math.round(Number(values['startCode'])) || 0
+        const startCode = parseCodepoint(values['startCode'] ?? '') ?? 0
         const linesPerChar = Number(values['linesPerChar']) || 8
         const bytesPerLine = Number(values['bytesPerLine']) || 1
         const est = estimateImport(file.bytes.length, { startCode, linesPerChar, bytesPerLine })
@@ -668,7 +885,7 @@ async function importRawFontCommand(): Promise<void> {
           parts.push(`The last character is short by ${est.bytesPerChar - est.remainderBytes} byte(s) — padded with zeroes.`)
         }
         if (est.overflow > 0) {
-          parts.push(`${est.overflow} character(s) past codepoint 255 will be dropped.`)
+          parts.push(`${est.overflow} character(s) past ${formatCodepoint(MAX_CODEPOINT)} will be dropped.`)
         }
         return parts.join(' ')
       }
@@ -677,7 +894,7 @@ async function importRawFontCommand(): Promise<void> {
   if (!values) return
 
   const options = {
-    startCode: Math.round(Number(values['startCode'])),
+    startCode: parseCodepoint(values['startCode'] ?? '') ?? 32,
     linesPerChar: clampLinesPerChar(Number(values['linesPerChar'])),
     bytesPerLine: clampBytesPerLine(Number(values['bytesPerLine'])),
     layout: values['layout'] === 'column' ? ('column' as const) : ('row' as const)
@@ -707,7 +924,9 @@ async function importRawFontCommand(): Promise<void> {
 
   const notes: string[] = [`Imported ${result.glyphs.length} glyph(s) from ${file.path.split(/[\\/]/).pop()}.`]
   if (result.paddedWithZeroes) notes.push('The last character was padded with zeroes.')
-  if (result.droppedOverflow > 0) notes.push(`${result.droppedOverflow} character(s) past codepoint 255 were dropped.`)
+  if (result.droppedOverflow > 0) {
+    notes.push(`${result.droppedOverflow} character(s) past ${formatCodepoint(MAX_CODEPOINT)} were dropped.`)
+  }
   statusLine.textContent = notes.join(' ')
 }
 
@@ -857,6 +1076,34 @@ async function dispatch(command: string): Promise<void> {
     case 'edit:shiftRight':
       editGlyph((glyph, doc) => shiftGlyph(glyph, doc.width, 1, 0))
       break
+    case 'edit:swapReference':
+      swapWithReference()
+      break
+
+    case 'edit:whole:clear':
+      editWholeFont((glyph) => clearGlyph(glyph))
+      break
+    case 'edit:whole:invert':
+      editWholeFont((glyph, doc) => invertGlyph(glyph, doc.width))
+      break
+    case 'edit:whole:flipH':
+      editWholeFont((glyph, doc) => flipHorizontal(glyph, doc.width))
+      break
+    case 'edit:whole:flipV':
+      editWholeFont((glyph) => flipVertical(glyph))
+      break
+    case 'edit:whole:shiftUp':
+      editWholeFont((glyph, doc) => shiftGlyph(glyph, doc.width, 0, -1))
+      break
+    case 'edit:whole:shiftDown':
+      editWholeFont((glyph, doc) => shiftGlyph(glyph, doc.width, 0, 1))
+      break
+    case 'edit:whole:shiftLeft':
+      editWholeFont((glyph, doc) => shiftGlyph(glyph, doc.width, -1, 0))
+      break
+    case 'edit:whole:shiftRight':
+      editWholeFont((glyph, doc) => shiftGlyph(glyph, doc.width, 1, 0))
+      break
 
     case 'font:dimensions':
       await changeDimensions()
@@ -867,8 +1114,20 @@ async function dispatch(command: string): Promise<void> {
     case 'font:add':
       await addCodepointCommand()
       break
+    case 'font:addBefore':
+      addAdjacentCodepoint(-1)
+      break
+    case 'font:addAfter':
+      addAdjacentCodepoint(1)
+      break
     case 'font:remove':
       await removeCodepointCommand()
+      break
+    case 'font:renumber':
+      await renumberCodepointsCommand()
+      break
+    case 'font:trimRange':
+      await trimCodepointRangeCommand()
       break
     case 'font:fitWidth':
       editGlyph((glyph, doc) => {
@@ -890,10 +1149,25 @@ async function dispatch(command: string): Promise<void> {
       break
 
     case 'helpers:cp437Sam':
-      await populateCp437(true)
+      await populateCodepage(
+        'Define all 256 CP437 codepoints (SAM Coupe variant: £ at 0x60, © at 0x7F). Existing artwork is kept.',
+        buildCp437Sam()
+      )
       break
     case 'helpers:cp437':
-      await populateCp437(false)
+      await populateCodepage('Define all 256 stock CP437 codepoints. Existing artwork is kept.', buildCp437())
+      break
+    case 'helpers:asciiSam':
+      await populateCodepage(
+        'Define codepoints 32-127 with the SAM Coupe character set (£ at 0x60, © at 0x7F). Existing artwork is kept.',
+        buildAsciiSam()
+      )
+      break
+    case 'helpers:ascii':
+      await populateCodepage(
+        'Define codepoints 32-127 with standard ASCII. Existing artwork is kept.',
+        buildAscii()
+      )
       break
     case 'helpers:editMapping':
       await editMappingCommand()
@@ -939,7 +1213,7 @@ async function dispatch(command: string): Promise<void> {
     case 'help:about':
       await showMessage(
         'Font Editor',
-        'Monochrome bitmap font editor — variable and fixed width, 1bpp output with separate width and codepoint-mapping sidecars.'
+        'Monochrome bitmap font editor for the SAM Coupé. Supports variable and fixed-width fonts, 1bpp output with separate width and codepoint-mapping sidecars.\n\nCopyright © 2026 Simon Cooke, released under MIT License. Developed by Simon Cooke, and Claude.'
       )
       break
 
@@ -955,6 +1229,7 @@ async function dispatch(command: string): Promise<void> {
 // --- boot ------------------------------------------------------------------
 
 window.api.onCommand((command) => void dispatch(command))
+window.api.onOpenRecent((path) => void openRecentFile(path))
 
 // Main owns the horizontal-guide and preview-inversion preferences and pushes
 // them whenever a tick changes; column-guide visibility is folded in from the
@@ -968,7 +1243,7 @@ window.api.onViewState((view) => {
 previewInput.value = store.get().previewText
 previewInput.addEventListener('input', () => {
   store.get().previewText = previewInput.value
-  preview.render(store.doc, previewInput.value)
+  renderPreview(store.doc, previewInput.value)
 })
 
 // A focused text field keeps Chromium's own clipboard behaviour; everywhere else

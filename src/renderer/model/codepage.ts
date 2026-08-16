@@ -55,6 +55,21 @@ export function buildCp437Sam(): Record<number, string> {
   return { ...buildCp437(), ...SAM_OVERRIDES }
 }
 
+/** Plain 7-bit ASCII, codepoints 0x20-0x7F only — 0x7F is the literal DEL character. */
+export function buildAscii(): Record<number, string> {
+  const map: Record<number, string> = {}
+  for (let code = 0x20; code <= 0x7f; code++) map[code] = String.fromCodePoint(code)
+  return map
+}
+
+/** The SAM Coupe CP437 variant, restricted to codepoints 0x20-0x7F (£ at 0x60, © at 0x7F). */
+export function buildAsciiSam(): Record<number, string> {
+  const sam = buildCp437Sam()
+  const map: Record<number, string> = {}
+  for (let code = 0x20; code <= 0x7f; code++) map[code] = sam[code]!
+  return map
+}
+
 /** char -> codepoint, for turning preview text into glyph indices. First match wins. */
 export function reverseCodepage(codepage: Record<number, string>): Map<string, number> {
   const reverse = new Map<string, number>()
@@ -62,6 +77,11 @@ export function reverseCodepage(codepage: Record<number, string>): Map<string, n
     if (!reverse.has(char)) reverse.set(char, Number(code))
   }
   return reverse
+}
+
+/** "32 (0x20)" — decimal first, hex in parens, the display convention used everywhere a codepoint is shown. */
+export function formatCodepoint(code: number): string {
+  return `${code} (0x${code.toString(16).toUpperCase().padStart(2, '0')})`
 }
 
 /** Human-readable stand-in for characters that would render as blank or a control code. */
@@ -72,5 +92,6 @@ export function displayChar(char: string | undefined): string {
   if (cp < 0x20) return '□' // □ — CP437 pictograph the system font may not have
   if (cp === 0x20) return '␣' // ␣
   if (cp === 0xa0) return '␣'
+  if (cp === 0x7f) return '␡' // ␡ — DEL, from plain ASCII rather than a CP437 pictograph
   return char
 }

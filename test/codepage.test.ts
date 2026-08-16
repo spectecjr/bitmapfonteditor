@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildAscii,
+  buildAsciiSam,
   buildCp437,
   buildCp437Sam,
   displayChar,
+  formatCodepoint,
   reverseCodepage,
   SAM_OVERRIDES
 } from '../src/renderer/model/codepage'
@@ -54,6 +57,26 @@ describe('SAM Coupe variant', () => {
   })
 })
 
+describe('ASCII (32-127 only)', () => {
+  it('covers exactly codepoints 0x20-0x7F', () => {
+    const map = buildAscii()
+    expect(Object.keys(map).map(Number).sort((a, b) => a - b)).toEqual(
+      Array.from({ length: 0x7f - 0x20 + 1 }, (_, i) => i + 0x20)
+    )
+    expect(map[0x41]).toBe('A')
+    expect(cp(map[0x7f])).toBe(0x7f) // literal DEL, not a CP437 substitute
+  })
+
+  it('matches the SAM Coupe CP437 variant over the same restricted range', () => {
+    const sam = buildAsciiSam()
+    const fullSam = buildCp437Sam()
+    for (let code = 0x20; code <= 0x7f; code++) expect(sam[code]).toBe(fullSam[code])
+    expect(Object.keys(sam)).toHaveLength(0x7f - 0x20 + 1)
+    expect(sam[0x60]).toBe('£')
+    expect(sam[0x7f]).toBe('©')
+  })
+})
+
 describe('lookup helpers', () => {
   it('inverts the map, keeping the lowest codepoint for duplicates', () => {
     const reverse = reverseCodepage({ 32: ' ', 65: 'A', 200: 'A' })
@@ -69,5 +92,11 @@ describe('lookup helpers', () => {
     expect(displayChar(String.fromCodePoint(0x01))).toBe('□')
     expect(displayChar(String.fromCodePoint(0xa0))).toBe('␣')
     expect(displayChar(undefined)).toBe('')
+  })
+
+  it('formats a codepoint as decimal first, hex in parens', () => {
+    expect(formatCodepoint(32)).toBe('32 (0x20)')
+    expect(formatCodepoint(0)).toBe('0 (0x00)')
+    expect(formatCodepoint(255)).toBe('255 (0xFF)')
   })
 })

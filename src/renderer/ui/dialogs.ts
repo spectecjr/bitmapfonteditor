@@ -1,3 +1,5 @@
+import { MAX_CODEPOINT } from '@shared/types'
+
 export interface SelectOption {
   value: string
   label: string
@@ -288,6 +290,124 @@ export function showConfirm(
   })
 }
 
+/** Decimal or `0xNN` hex, for a full Unicode codepoint rather than a font slot 0-255. */
+export function parseUnicodeCodepoint(input: string): number | null {
+  const text = input.trim()
+  if (!text) return null
+  const value = /^0x[0-9a-f]+$/i.test(text) ? Number.parseInt(text.slice(2), 16) : Number.parseInt(text, 10)
+  if (!/^(0x[0-9a-f]+|\d+)$/i.test(text) || !Number.isInteger(value) || value < 0 || value > MAX_CODEPOINT) return null
+  return value
+}
+
+export interface MappingDialogResult {
+  mode: 'char' | 'code'
+  /** Raw text of the Character field — the caller decides how to interpret it based on `mode`. */
+  char: string
+  /** Raw text of the Character code field — decimal or `0xNN` hex, unvalidated. */
+  code: string
+}
+
+/**
+ * The "what character does this codepoint mean?" dialog — the character can be
+ * typed directly, or given as its Unicode codepoint (decimal or `0xNN` hex),
+ * whichever is easier to type. A radio button records which one is meant;
+ * typing in either field auto-selects its own radio, and neither field is ever
+ * disabled, so you can go back and forth before confirming. Validation of the
+ * chosen field is the caller's job, the same as every other codepoint entry in
+ * this app — this just reports which field the user meant.
+ */
+export function showMappingDialog(title: string, initialChar: string): Promise<MappingDialogResult | null> {
+  return new Promise((resolve) => {
+    const dialog = document.createElement('dialog')
+    dialog.className = 'app-dialog'
+
+    const heading = document.createElement('h2')
+    heading.textContent = title
+
+    const form = document.createElement('form')
+    form.method = 'dialog'
+
+    const makeField = (
+      radioLabel: string,
+      inputValue: string,
+      hintText: string
+    ): { wrapper: HTMLElement; radio: HTMLInputElement; input: HTMLInputElement } => {
+      const wrapper = document.createElement('div')
+      wrapper.className = 'dialog-field'
+      const radioRow = document.createElement('label')
+      radioRow.className = 'dialog-radio-row'
+      const radio = document.createElement('input')
+      radio.type = 'radio'
+      radio.name = 'mapping-mode'
+      const radioText = document.createElement('span')
+      radioText.textContent = radioLabel
+      radioRow.append(radio, radioText)
+      const input = document.createElement('input')
+      input.type = 'text'
+      input.value = inputValue
+      const hint = document.createElement('small')
+      hint.textContent = hintText
+      wrapper.append(radioRow, input, hint)
+      input.addEventListener('input', () => {
+        radio.checked = true
+      })
+      return { wrapper, radio, input }
+    }
+
+    const charField = makeField(
+      'Character',
+      initialChar,
+      'The Unicode character this codepoint represents. Display only — never exported in the bitmap.'
+    )
+    const codeField = makeField(
+      'Character code',
+      initialChar ? String(initialChar.codePointAt(0)) : '',
+      'Unicode codepoint of the character: decimal (8364) or hex (0x20AC).'
+    )
+    charField.radio.checked = true
+
+    form.append(charField.wrapper, codeField.wrapper)
+
+    const buttons = document.createElement('div')
+    buttons.className = 'dialog-buttons'
+    const cancel = document.createElement('button')
+    cancel.type = 'button'
+    cancel.textContent = 'Cancel'
+    const confirm = document.createElement('button')
+    confirm.type = 'submit'
+    confirm.className = 'primary'
+    confirm.textContent = 'OK'
+    buttons.append(cancel, confirm)
+    form.append(buttons)
+
+    dialog.append(heading, form)
+    document.body.append(dialog)
+
+    const close = (result: MappingDialogResult | null): void => {
+      dialog.close()
+      dialog.remove()
+      resolve(result)
+    }
+
+    cancel.addEventListener('click', () => close(null))
+    dialog.addEventListener('cancel', (event) => {
+      event.preventDefault()
+      close(null)
+    })
+    form.addEventListener('submit', (event) => {
+      event.preventDefault()
+      close({
+        mode: codeField.radio.checked ? 'code' : 'char',
+        char: charField.input.value,
+        code: codeField.input.value
+      })
+    })
+
+    dialog.showModal()
+    charField.input.select()
+  })
+}
+
 /** Accepts `65`, `0x41`, `$41`, or a bare character like `A`. */
 export function parseCodepoint(input: string): number | null {
   const text = input.trim()
@@ -300,6 +420,6 @@ export function parseCodepoint(input: string): number | null {
   else if ([...text].length === 1) value = text.codePointAt(0)!
   else return null
 
-  if (!Number.isInteger(value) || value < 0 || value > 255) return null
+  if (!Number.isInteger(value) || value < 0 || value > MAX_CODEPOINT) return null
   return value
 }

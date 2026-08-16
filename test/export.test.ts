@@ -107,9 +107,16 @@ describe('mapping sidecar', () => {
     expect(parseMapping(serializeMapping(original))).toEqual(original)
   })
 
+  it('round-trips codepoints above the old 255 ceiling', () => {
+    const original = { 999: 'A', 0x1f600: '😀' }
+    expect(parseMapping(serializeMapping(original))).toEqual(original)
+  })
+
   it('rejects malformed files', () => {
     expect(() => parseMapping('{"version":2,"entries":[]}')).toThrow(/version/)
     expect(() => parseMapping('{"version":1}')).toThrow(/entries/)
-    expect(() => parseMapping('{"version":1,"entries":[{"code":999,"char":"x"}]}')).toThrow(/0\.\.255/)
+    expect(() => parseMapping('{"version":1,"entries":[{"code":99999999,"char":"x"}]}')).toThrow(
+      /is not a codepoint/
+    )
   })
 })
