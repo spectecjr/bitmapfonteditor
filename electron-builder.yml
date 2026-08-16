@@ -4,15 +4,21 @@ copyright: Copyright © Simon Cooke
 
 # electron-builder auto-publishes straight to GitHub Releases whenever it sees
 # a GH_TOKEN and a tag-shaped ref — true in CI even though .github/workflows/
-# release.yml never asked for that, and never configured a `publish:` block
-# here in the first place. Left implicit, that produced a second, differently
-# name-sanitized copy of every artifact (spaces become hyphens here vs. dots
-# from `gh release upload`) plus electron-updater's latest*.yml metadata,
-# uploaded independently of and in addition to the workflow's own upload step
-# — discovered the hard way on the v0.1.2 release. This workflow's own
-# draft-then-publish sequencing is the only thing that should ever touch the
-# release.
-publish: never
+# release.yml never asked for that. Left implicit, that produced a second,
+# differently name-sanitized copy of every artifact (spaces become hyphens
+# here vs. dots from `gh release upload`) plus electron-updater's latest*.yml
+# metadata, uploaded independently of and in addition to the workflow's own
+# upload step — discovered the hard way on the v0.1.2 release.
+#
+# The fix is the `--publish never` CLI flag on every `npm run dist` call in
+# release.yml, not a `publish:` key here: this config field configures a
+# publish *target* (a provider like `github`), so a bare string is resolved as
+# a provider name and electron-builder tries to `require('electron-publisher-
+# never')` — which doesn't exist, and crashes every platform's build. That
+# broke the v0.1.3 release before this fix. `publish: never` only means
+# "don't publish" as a CLI/API policy value, not as this config key's value —
+# leaving the key out entirely is correct once the CLI flag is already doing
+# the job on every invocation.
 
 directories:
   output: release
