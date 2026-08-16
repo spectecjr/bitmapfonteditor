@@ -3,10 +3,12 @@
   "width": 8,
   "height": 8,
   "baseline": 7,
-  "xHeight": 3,
+  "xHeight": 2,
   "capHeight": 0,
   "leftColumn": 1,
   "rightColumn": 7,
+  "showLeftColumn": true,
+  "showRightColumn": true,
   "glyphs": [
     {
       "code": 32,
@@ -1699,7 +1701,7 @@
         "22",
         "1E",
         "02",
-        "00"
+        "1C"
       ]
     },
     {
@@ -2191,6 +2193,6 @@
     "email": "",
     "description": "This is the SAM Coupé international font that shipped with the SAM on the SAMDOS2 disk and the MGT utility tape. \n\nIt contains all of the characters from the extended set; a normal SAM without this loaded only defines characters up to codepoint 130, ending at the SAM's \"é\" symbol, but the previous two characters are defined as caps-lock on/off characters for the cursor.",
     "created": "2026-08-16T00:42:39.223Z",
-    "modified": "2026-08-16T00:42:39.223Z"
+    "modified": "2026-08-16T02:19:59.922Z"
   }
 }
