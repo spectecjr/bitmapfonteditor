@@ -1,6 +1,6 @@
 {
   "name": "fonteditor",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Monochrome bitmap font editor for variable- and fixed-width fonts",
   "author": "Simon Cooke",
