@@ -49,15 +49,15 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            target: --linux AppImage
+            target: --linux AppImage --publish never
             glob: release/*.AppImage
           - os: macos-latest
             # macos-latest is Apple Silicon, so x64 has to be asked for by name
             # or Intel Macs get nothing.
-            target: --mac dmg --x64 --arm64
+            target: --mac dmg --x64 --arm64 --publish never
             glob: release/*.dmg
           - os: windows-latest
-            target: --win nsis
+            target: --win nsis --publish never
             glob: release/*.exe
     runs-on: ${{ matrix.os }}
     defaults:
@@ -74,6 +74,17 @@ jobs:
       - run: npm ci
 
       - name: Build
+        # --publish never (also in electron-builder.yml, belt-and-suspenders):
+        # electron-builder auto-publishes straight to GitHub whenever it sees a
+        # GH_TOKEN plus a tag-shaped ref, which is exactly this job's
+        # environment — entirely independent of the "Attach to the draft
+        # release" step below. Left on, it uploaded a second, differently
+        # name-sanitized copy of every artifact (electron-builder replaces
+        # spaces with hyphens; `gh release upload` replaces them with dots)
+        # plus electron-updater's latest*.yml, discovered on the v0.1.2
+        # release. electron-builder.yml's own `publish: never` only disables
+        # publish *providers*; the CLI flag is what actually sets the publish
+        # *policy* PublishManager gates on, so both are needed.
         run: npm run dist -- ${{ matrix.target }}
         env:
           # There is no Apple certificate here. Without this, electron-builder
